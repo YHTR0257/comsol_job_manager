@@ -6,24 +6,88 @@ import java.nio.file.Paths;
 import java.nio.file.Files;
 import java.io.IOException;
 
-public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSON {
+public class {{ class_name }} {
 
     public static Model run() {
-        String file = <>;
-        String path = ;
-        String stlfile = ;
+        String file = "{{ file_name }}";
+        String path = "{{ output_path }}";
+        String stlfile = "{{ stl_path }}";
         Path output = Paths.get(path+"/"+file);
+        try{
+            Files.createDirectory(output);
+        }catch(IOException e){
+            System.out.println(e);
+        }
+
+        double lconst = {{ lattice_constant }};
+        // double xRs = 100./AAA.;
+        // double xRb_Rs = 100./BBB.;
+        double pratio = {{ poisson_ratio }}/100.;
+
+        // String[] dstep = new String[]{"range(0,1e-3,1)"};
+        String[] dstep = new String[]{ {{ dstep }} };
+        double delta_ = {{ delta }};
 
         double aa, bb, cc, bc, ca, ab, rs, rb;
         aa = lconst; bb = lconst; cc = lconst;
         bc = 90.0; ca = 90.0; ab = 90.0;
-        rs = AAA./100.;
-        rb = BBB./100.;
+        rs = {{ sphere_radius_ratio }}/100.;
+        rb = {{ bond_radius_ratio }}/100.;
+        // rs = xRs * lconst;
+        // rb = xRb_Rs * rs;
 
-        double dpos = 0.SHIFT;
+        double[][] e = basis(aa, bb, cc, bc, ca, ab);
+
+        String which_lattice = "{{ lattice_type }}";
+
+        double[][] loc_ = new double[][]{
+            {0,0,0}
+        };
+        double d_min = {{ d_min }};
+        double d_max = {{ d_max }};
+
+        if (which_lattice == "fcc"){
+            loc_ = new double[][]{
+                {0,0,0},
+                {0,.5,.5},
+                {.5,0,.5},
+                {.5,.5,0}
+            };
+            d_min = 0.7 * lconst;
+            d_max = 0.71 * lconst;
+        } else if (which_lattice == "dia"){
+            loc_ = new double[][] {
+                {0,0,0},
+                {0,.5,.5},
+                {.5,0,.5},
+                {.5,.5,0},
+                {0.25,0.25,0.25},
+                {0.25,0.75,0.75},
+                {0.75,0.25,0.75},
+                {0.75,0.75,0.25}
+            };
+            d_min = .4 * lconst;
+            d_max = .45 * lconst;
+
+        } else if (which_lattice == "bcc"){
+            loc_ = new double[][]{
+                {0,0,0},
+                {.5,.5,.5}
+            };
+            d_min = .8 * lconst;
+            d_max = .9 * lconst;
+        } else if (which_lattice == "simple"){
+            loc_ = new double[][]{
+                {0,0,0},
+            };
+            d_min = .9 * lconst;
+            d_max = 1.1 * lconst;
+        }
+
+        double dpos = {{ shift }};
         double[][] loc = translatePoints(loc_, dpos);
 
-        int nnn = NNN;
+        int nnn = {{ num_cells }};
         int nx, ny, nz;
         nx = nnn; ny = nnn; nz = nnn;
 
@@ -38,6 +102,23 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
             uni_size[i] = e[0][i]*nx + e[1][i]*ny + e[2][i]*nz;
         }
 
+        /* 切り出す結晶面 */
+        String direc = "EE11EE22EE33EE44EE55EE66";
+        double[][] rotate = new double[3][3];
+        if (direc == "111"){
+            rotate = new double[][]{
+                {-1.,1.,0.},
+                {-1.,-1.,2.},
+                {1.,1.,1.}
+            };
+        } else if (direc == "100"){
+            rotate = new double[][]{
+                {1.,0.,0.},
+                {0.,1.,0.},
+                {0.,0.,1.}
+            };
+        }
+        
         double[][] rotate1 = unit_tensor(rotate);
         double[][] rotate1_ = transpose(rotate1);
 
@@ -74,6 +155,7 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
         model.component().create("comp1", true);
 
         int ttt = 3;
+
         /* テーブル作成 */
         for (int i = 1; i < ttt; i++){
             model.result().table().create("tbl"+i, "Table");
@@ -160,25 +242,25 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
         model.component("comp1").physics("solid").create("disp3", "Displacement2", 2);
         model.component("comp1").physics("solid").feature("disp3").selection().named("geom1_boxsel6");
 
-        model.component("comp1").physics("solid").feature("disp1").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp1").set("Direction", new int[][]{% raw %}{{1}, {1}, {1}}{% endraw %});
         model.component("comp1").physics("solid").feature("disp1")
-             .set("U0", new String[][]{{"coupleX(u) - E11 * X * disp"},
+             .set("U0", new String[][]{% raw %}{{"coupleX(u) - E11 * X * disp"},
                                         {"coupleX(v) - E21 * X * disp"},
-                                        {"coupleX(w) - E31 * X * disp"}});
+                                        {"coupleX(w) - E31 * X * disp"}}{% endraw %});
         model.component("comp1").physics("solid").feature("disp1").label("periodicX");
         model.component("comp1").physics("solid").feature("disp1").featureInfo("info").label("Equation View");
-        model.component("comp1").physics("solid").feature("disp2").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp2").set("Direction", new int[][]{% raw %}{{1}, {1}, {1}}{% endraw %});
         model.component("comp1").physics("solid").feature("disp2")
-             .set("U0", new String[][]{{"coupleY(u) - E12 * Y * disp"},
+             .set("U0", new String[][]{% raw %}{{"coupleY(u) - E12 * Y * disp"},
                                         {"coupleY(v) - E22 * Y * disp"},
-                                        {"coupleY(w) - E32 * Y * disp"}});
+                                        {"coupleY(w) - E32 * Y * disp"}}{% endraw %});
         model.component("comp1").physics("solid").feature("disp2").label("periodicY");
         model.component("comp1").physics("solid").feature("disp2").featureInfo("info").label("Equation View");
-        model.component("comp1").physics("solid").feature("disp3").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp3").set("Direction", new int[][]{% raw %}{{1}, {1}, {1}}{% endraw %});
         model.component("comp1").physics("solid").feature("disp3")
-             .set("U0", new String[][]{{"coupleZ(u) - E13 * Z * disp"},
+             .set("U0", new String[][]{% raw %}{{"coupleZ(u) - E13 * Z * disp"},
                                         {"coupleZ(v) - E23 * Z * disp"},
-                                        {"coupleZ(w) - E33 * Z * disp"}});
+                                        {"coupleZ(w) - E33 * Z * disp"}}{% endraw %});
         model.component("comp1").physics("solid").feature("disp3").label("periodicZ");
         model.component("comp1").physics("solid").feature("disp3").featureInfo("info").label("Equation View");
 
@@ -307,12 +389,12 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
         model.result().dataset("av1").set("method", "integration");
         model.result().dataset("av1").set("intorderactive", true);
 
-        // double[][] e11_ = rot(rotate1, rot(new double[][]{{1,0,0},{0,0,0},{0,0,0}}, rotate1_));
-        // double[][] e22_ = rot(rotate1, rot(new double[][]{{0,0,0},{0,1,0},{0,0,0}}, rotate1_));
-        double[][] e33_ = rot(rotate1, rot(new double[][]{{0,0,0},{0,0,0},{0,0,1}}, rotate1_));
-        // double[][] e23_ = rot(rotate1, rot(new double[][]{{0,0,0},{0,0,0.5},{0,0.5,0}}, rotate1_));
-        double[][] e31_ = rot(rotate1, rot(new double[][]{{0,0,0.5},{0,0,0},{0.5,0,0}}, rotate1_));
-        // double[][] e12_ = rot(rotate1, rot(new double[][]{{0,0.5,0},{0.5,0,0},{0,0,0}}, rotate1_));
+        // double[][] e11_ = rot(rotate1, rot(new double[][]{% raw %}{{1,0,0},{0,0,0},{0,0,0}}{% endraw %}, rotate1_));
+        // double[][] e22_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0},{0,1,0},{0,0,0}}{% endraw %}, rotate1_));
+        double[][] e33_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0},{0,0,0},{0,0,1}}{% endraw %}, rotate1_));
+        // double[][] e23_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0},{0,0,0.5},{0,0.5,0}}{% endraw %}, rotate1_));
+        double[][] e31_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0.5},{0,0,0},{0.5,0,0}}{% endraw %}, rotate1_));
+        // double[][] e12_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0.5,0},{0.5,0,0},{0,0,0}}{% endraw %}, rotate1_));
 
         String ddd = "*delta ";
         String dd = "*delta";
@@ -415,9 +497,9 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
             model.result().numerical("gev"+i).set("unit", new String[]{"MPa"});
             model.result().numerical("gev"+i).set("descr", new String[]{""});
             model.result().numerical("gev"+i)
-                 .set("const", new String[][]{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
+                 .set("const", new String[][]{% raw %}{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
                                             {"solid.refpnty", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (y \u5ea7\u6a19)"},
-                                            {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}});
+                                            {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}}{% endraw %});
 
             model.result().numerical("gev"+i).setResult();
         }
@@ -425,9 +507,9 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
         for (int i = 1; i < 10; i++){
             model.result().numerical("pev"+i).set("looplevelinput", new String[]{"manual"});
             model.result().numerical("pev"+i)
-                 .set("const", new String[][]{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
+                 .set("const", new String[][]{% raw %}{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
                                             {"solid.refpnty", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (y \u5ea7\u6a19)"},
-                                            {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}});
+                                            {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}}{% endraw %});
         }
 
         model.result().numerical().create("pev10", "EvalPoint");
@@ -494,9 +576,9 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
         model.result("pg2").set("showlegendsmaxmin", true);
         model.result("pg2").feature("surf1").set("unit", "MPa");
         model.result("pg2").feature("surf1")
-             .set("const", new String[][]{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
+             .set("const", new String[][]{% raw %}{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
                                         {"solid.refpnty", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (y \u5ea7\u6a19)"},
-                                        {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}});
+                                        {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}}{% endraw %});
         model.result("pg2").feature("surf1").set("colortable", "RainbowLight");
         model.result("pg2").feature("surf1").set("resolution", "normal");
         model.result("pg2").feature("surf1").feature("def").set("scaleactive", true);
@@ -557,8 +639,200 @@ public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSO
 
         return model;
     }
+
     public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines){
+        model.component("comp1").geom().create("geom1", 3);
+
+        model.component("comp1").geom("geom1").lengthUnit("mm");
+
+        int i = 0;
+        for (double[] p : points){
+        	String sph = "sph"+i;
+            model.component("comp1").geom("geom1").create(sph, "Sphere");
+    	    model.component("comp1").geom("geom1").feature(sph).set("pos", p);
+    	    model.component("comp1").geom("geom1").feature(sph).set("r", "Rs");
+
+            if (i == 0){
+                model.component("comp1").geom("geom1").create("uni1", "Union");
+                model.component("comp1").geom("geom1").feature("uni1").selection("input").set(sph);
+            }else{
+                model.component("comp1").geom("geom1").feature().move("uni1", i+1);
+                model.component("comp1").geom("geom1").feature("uni1").selection("input").add(sph);
+            }
+
+            i++;
+    	}
+
+        int j = 0;
+        for (double[][] l : lines){
+            String lll = "lin"+j;
+            model.component("comp1").geom("geom1").create(lll, "LineSegment");
+            model.component("comp1").geom("geom1").feature(lll).set("specify1", "coord");
+            model.component("comp1").geom("geom1").feature(lll).set("specify2", "coord");
+            model.component("comp1").geom("geom1").feature(lll).set("coord1", l[0]);
+            model.component("comp1").geom("geom1").feature(lll).set("coord2", l[1]);
+
+            double[] ln = new double[3];
+            for (int k = 0; k < 3; k++){
+                ln[k] = l[1][k] - l[0][k];
+            }
+
+            String wp = "wp"+j;
+            model.component("comp1").geom("geom1").create(wp, "WorkPlane");
+            model.component("comp1").geom("geom1").feature(wp).set("unite", true);
+            model.component("comp1").geom("geom1").feature(wp).set("planetype", "normalvector");
+            model.component("comp1").geom("geom1").feature(wp).set("normalvector", ln);
+            model.component("comp1").geom("geom1").feature(wp).set("normalcoord", l[0]);
+
+            model.component("comp1").geom("geom1").feature(wp).geom().create("c1", "Circle");
+            model.component("comp1").geom("geom1").feature(wp).geom().feature("c1").set("r", "Rb");
+
+            String swp = "swp"+j;
+            model.component("comp1").geom("geom1").create(swp, "Sweep");
+            model.component("comp1").geom("geom1").feature(swp).set("crossfaces", true);
+            model.component("comp1").geom("geom1").feature(swp).set("includefinal", false);
+            model.component("comp1").geom("geom1").feature(swp).selection("face").set(wp+".c1", 1);
+            model.component("comp1").geom("geom1").feature(swp).selection("edge").set(lll+"(1)", 1);
+            model.component("comp1").geom("geom1").feature(swp).selection("diredge").set(lll+"(1)", 1);
+
+            model.component("comp1").geom("geom1").feature().move("uni1", i+3+j*3);
+            model.component("comp1").geom("geom1").feature("uni1").selection("input").add(swp);
+            j++;
+        }
+
+        model.component("comp1").geom("geom1").create("blk0", "Block");
+        model.component("comp1").geom("geom1").feature("blk0").set("pos", new double[]{0.,0.,0.});
+        model.component("comp1").geom("geom1").feature("blk0").set("size", uni_size);
+
+        model.component("comp1").geom("geom1").create("dif1", "Difference");
+        model.component("comp1").geom("geom1").feature().move("dif1", i+2+j*3);
+        model.component("comp1").geom("geom1").feature("dif1").selection("input").set("blk0");
+        model.component("comp1").geom("geom1").feature("dif1").selection("input2").set("uni1");
+
+        model.component("comp1").geom("geom1").create("blk1", "Block");
+        model.component("comp1").geom("geom1").feature("blk1").set("pos", new double[]{0.,0.,0.});
+        model.component("comp1").geom("geom1").feature("blk1").set("size", uni_size);
+
+        model.component("comp1").geom("geom1").create("dif2", "Difference");
+        model.component("comp1").geom("geom1").feature("dif2").selection("input").set("blk1");
+        model.component("comp1").geom("geom1").feature("dif2").selection("input2").set("dif1");
+
+        model.component("comp1").geom("geom1").create("boxsel1", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel1").label("edgeXn");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("xmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("xmax", "eps");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("condition", "inside");
+
+        model.component("comp1").geom("geom1").create("boxsel2", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel2").label("edgeXp");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("xmin", "Lx-eps");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("xmax", "Lx+eps");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("condition", "inside");
+
+        model.component("comp1").geom("geom1").create("boxsel3", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel3").label("edgeYn");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("ymin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("ymax", "eps");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("condition", "inside");
+
+        model.component("comp1").geom("geom1").create("boxsel4", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel4").label("edgeYp");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("ymin", "Ly-eps");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("ymax", "Ly+eps");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("condition", "inside");
+
+        model.component("comp1").geom("geom1").create("boxsel5", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel5").label("edgeZn");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("zmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("zmax", "eps");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("condition", "inside");
+
+        model.component("comp1").geom("geom1").create("boxsel6", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel6").label("edgeZp");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("zmin", "Lz-eps");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("zmax", "Lz+eps");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("condition", "inside");
+
+        model.component("comp1").geom("geom1").create("boxsel7", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("entitydim", 0);
+        model.component("comp1").geom("geom1").feature("boxsel7").label("edgePoint");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("xmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("xmax", "+eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("ymin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("ymax", "+eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("zmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("zmax", "+eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("condition", "inside");
+
+        model.component("comp1").geom("geom1").run();
+
+        return model;
     }
+
+    public static void main(String[] args) {
+        run();
+    }
+
+    /* 以下、関数 */
+    private static double[][] basis(double aa, double bb, double cc, double bc, double ca, double ab){
+        double alpha = Math.toRadians(bc);
+        double beta = Math.toRadians(ca);
+        double gamma = Math.toRadians(ab);
+
+        double[][] e = new double[3][3];
+
+        e[0][0] = aa; e[0][1] = 0; e[0][2] = 0;
+
+        e[1][0] = bb * Math.round(Math.cos(gamma) * 1000)/1000;
+        e[1][1] = bb * Math.round(Math.sin(gamma) * 1000)/1000;
+        e[1][2] = 0;
+
+        e[2][0] = cc * Math.round(Math.cos(beta) * 1000)/1000;
+        e[2][1] = cc * Math.round(((Math.cos(alpha)-Math.cos(beta)*Math.cos(gamma))/Math.sin(gamma)) * 1000)/1000;
+        e[2][2] = cc * Math.round(Math.pow((1-Math.pow(Math.cos(alpha),2)-Math.pow(Math.cos(beta),2)-Math.pow(Math.cos(gamma),2)+2*Math.cos(alpha)*Math.cos(beta)*Math.cos(gamma)),(1/2))/Math.sin(gamma) * 1000)/1000;
+
+        // System.out.println("e1 = " + Arrays.toString(e[0]));
+        // System.out.println("e2 = " + Arrays.toString(e[1]));
+        // System.out.println("e3 = " + Arrays.toString(e[2]));
+
+        return e;
+    }
+
+    private static double[][] lattice_points(double[][] e, double[][] loc, int nx, int ny, int nz){
+        double[][] points = new double[0][3];
+
+        for (int k = 0; k <= nz; k++){
+            for (int j = 0; j <= ny; j++){
+                for (int i = 0; i <= nx; i++){
+                    for (double[] l : loc){
+                        if((i==nx) && (l[0]>0)){
+                            continue;
+                        }else if((j==ny) && (l[1]>0)){
+                            continue;
+                        }else if((k==nz) && (l[2]>0)){
+                            continue;
+                        }
+                        double[] point =  new double[3];
+                        for (int m = 0; m < 3; m++){
+                            double p = (l[0] + i) * e[0][m];
+                            double q = (l[1] + j) * e[1][m];
+                            double r = (l[2] + k) * e[2][m];
+                            point[m] = p + q + r;
+                        }
+                        points = add(points, point);
+                    }
+                }
+            }
+        }
+        return points;
+    }
+
     private static double[][][] select_bonds(double[][] points, double d_min, double d_max){
         double[][][] lines = new double[0][2][3];
 
