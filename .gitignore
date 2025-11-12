@@ -53,7 +53,7 @@ Thumbs.db
 *.ipynb
 
 # Jobs directory (local job storage)
-/jobs
+jobs/
 
 # Java build / cache / artifacts
 *.class
