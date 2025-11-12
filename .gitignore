@@ -1,0 +1,109 @@
+# .gitignore for comsol_job_manager
+# Tailored for a Python + Docker project layout
+# - ignore virtual environments, caches, build artifacts
+# - ignore local env files, logs, data outputs, editor settings
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Installer / environment
+.env
+.env.*
+.venv/
+venv/
+ENV/
+env/
+
+# Pytest / coverage / testing
+.pytest_cache/
+.cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Type checkers / linters
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# IDEs / editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints
+
+# Notebooks
+*.ipynb
+
+# Jobs directory (local job storage)
+/jobs/**
+!jobs/.gitkeep
+
+# Java build / cache / artifacts
+*.class
+*.jar
+*.war
+*.ear
+/target/
+.gradle/
+.settings/
+*.iml
+*.class
+
+# Logs and runtime files
+/logs/
+*.log
+
+# Data outputs (ignore contents but keep the directory if you track .gitkeep)
+/data/**
+!data/.gitkeep
+
+# SQLite / DB files
+*.sqlite3
+*.db
+
+# Docker-related local files
+*.env.local
+docker-compose.override.yml
+docker-compose.*.local.yml
+
+# Python packaging caches
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Coverage / test reports
+.tox/
+htmlcov/
+
+# Ignore local IDE/run artifacts
+*.swp
+*.swo
+
+# node modules if any front-end is added
+node_modules/
+
+# keep possible lockfiles tracked but ignore workspace-specific lockfiles
+*.log
+
+# VSCode settings
+.vscode
+.devcontainer
+
+# End of .gitignore
