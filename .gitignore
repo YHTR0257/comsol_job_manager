@@ -71,6 +71,7 @@ data
 # Logs and runtime files
 /logs/
 *.log
+tmp/
 
 # Data outputs (ignore contents but keep the directory if you track .gitkeep)
 /data/**
