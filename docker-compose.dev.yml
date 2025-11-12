@@ -1,0 +1,78 @@
+services:
+  # Development Database
+  db:
+    image: postgres:16-alpine
+    container_name: esp_postgres_dev
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-esp_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-esp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-esp_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - esp_network
+    # --- Health Check Configuration for DB (Development) ---
+    healthcheck:
+      # POSTGRES_DB を参照
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s     # 5秒ごとにチェックを実行
+      timeout: 3s      # 3秒以内に応答がない場合はタイムアウト
+      retries: 5       # 5回連続で失敗したら unhealthy と判断
+      start_period: 10s # 起動後10秒間は失敗を許容
+
+  # Test Database
+  db_test:
+    image: postgres:16-alpine
+    container_name: esp_postgres_test
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB_TEST:-esp_test}
+      POSTGRES_USER: ${POSTGRES_USER:-esp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-esp_password}
+    ports:
+      - "${POSTGRES_TEST_PORT:-5433}:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    networks:
+      - esp_network
+    # --- Health Check Configuration for DB (Test) ---
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # Application Container
+  app:
+    build:
+      context: ./docker
+    container_name: comsol_job_manager_app_dev
+    depends_on:
+      db:
+        condition: service_healthy
+      db_test:
+        condition: service_healthy
+    volumes:
+      - .:/workspace
+      - ${SSH_AUTH_SOCK}:/ssh-agent
+    working_dir: /workspace
+    environment:
+      SSH_AUTH_SOCK: /ssh-agent
+      APP_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-esp_user}:${POSTGRES_PASSWORD:-esp_password}@db:5432/${POSTGRES_DB:-esp_dev}
+      DATABASE_URL_TEST: postgresql://${POSTGRES_USER:-esp_user}:${POSTGRES_PASSWORD:-esp_password}@db_test:5432/${POSTGRES_DB_TEST:-esp_test}
+    command: ["tail", "-f", "/dev/null"]
+    tty: true
+    stdin_open: true
+    networks:
+      - esp_network
+
+volumes:
+  postgres_dev_data:
+  postgres_test_data:
+
+networks:
+  esp_network:
+    driver: bridge

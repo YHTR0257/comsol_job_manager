@@ -1,0 +1,32 @@
+services:
+  app:
+    build:
+      context: ./docker
+    container_name: comsol_job_manager_app_prod
+    volumes:
+      - .:/workspace
+      - /mnt/h/docker_data/jobs:/workspace/jobs:delegated
+    working_dir: /workspace
+    environment:
+      APP_ENV: production
+      CUDA_LAUNCH_BLOCKING: 1
+      PYTORCH_CUDA_ALLOC_CONF: max_split_size_mb:128
+    command: ["tail", "-f", "/dev/null"]
+    tty: true
+    stdin_open: true
+    networks:
+      - simulation_network
+    
+    # GPU設定のみ
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+networks:
+  simulation_network:
+    external: true
+    name: simulation_network
