@@ -2,7 +2,7 @@ services:
   # Development Database
   db:
     image: postgres:16-alpine
-    container_name: esp_postgres_dev
+    container_name: comsol_postgres_dev
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-esp_dev}
       POSTGRES_USER: ${POSTGRES_USER:-esp_user}
@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
     networks:
-      - esp_network
+      - comsol_network
     # --- Health Check Configuration for DB (Development) ---
     healthcheck:
       # POSTGRES_DB を参照
@@ -25,7 +25,7 @@ services:
   # Test Database
   db_test:
     image: postgres:16-alpine
-    container_name: esp_postgres_test
+    container_name: comsol_postgres_test
     environment:
       POSTGRES_DB: ${POSTGRES_DB_TEST:-esp_test}
       POSTGRES_USER: ${POSTGRES_USER:-esp_user}
@@ -35,7 +35,7 @@ services:
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
     networks:
-      - esp_network
+      - comsol_network
     # --- Health Check Configuration for DB (Test) ---
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
@@ -67,12 +67,12 @@ services:
     tty: true
     stdin_open: true
     networks:
-      - esp_network
+      - comsol_network
 
 volumes:
   postgres_dev_data:
   postgres_test_data:
 
 networks:
-  esp_network:
+  comsol_network:
     driver: bridge
