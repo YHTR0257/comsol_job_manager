@@ -24,8 +24,7 @@ from pathlib import Path
 
 generator = JobGenerator(
     template_dir=Path('templates'),
-    output_base_dir=Path('jobs/comsol'),
-    reference_java_path=Path('tmp/ref/hosoda_ref.java')
+    output_base_dir=Path('jobs/comsol')
 )
 
 params = {
@@ -136,11 +135,11 @@ WSL/Linux Environment → Job Generation → Windows COMSOL Execution
 ### COMSOL Automation Components (Planned)
 
 **Job Generator** (`src/services/job_generator.py`)
-- Generate Java/Batch/Config files from reference Java implementation
+- Generate Java/Batch/Config files from Jinja2 templates
 - Job ID format: `job_YYYYMMDD_HHMMSS`
 - Output directory: `jobs/comsol/job_YYYYMMDD_HHMMSS/`
-- Uses `tmp/ref/hosoda_ref.java` as template base
-- Batch file generated from Jinja2 template (`templates/run.bat.j2`)
+- Templates: `templates/simulation.java.j2` and `templates/run.bat.j2`
+- All generation is template-based (no reference files required)
 - Assumes `comsol` command is in Windows PATH
 
 **Batch Executor** (`src/services/batch_executor.py`)
