@@ -1,85 +1,67 @@
 
-# Project Title
+# Project Overview
 
-Short one-line description of the project purpose.
+COMSOL Job Manager は、COMSOL Multiphysics を用いた格子構造の形状最適化を研究目的で自動化するツール群です。
 
-## Table of Contents
+テンプレート（Java / batch / YAML）を生成して Windows 側の COMSOL を実行し、結果を解析して PostgreSQL に記録します。
 
-- [Project Title](#project-title)
-- [Description](#description)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Development](#development)
-- [Testing](#testing)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+# Usage Instructions
 
-## Description
+Installation (Docker only):
 
-Add a short paragraph explaining what this project does and who it's for.
+このプロジェクトは依存関係をコンテナで提供する設計のため、セットアップは Docker コンテナを起動するだけです。
 
-## Requirements
+```bash
+# コンテナ起動（PostgreSQL 等）
+docker compose -f docker/docker-compose.yml up -d
+```
 
-- Python version: x.x
-- Docker (optional): x.x
-- Any other system deps
+その後、設定ファイルを指定して最適化を実行してください。詳細な実行手順や `.env` の設定は `docs/user_guide.md` を参照してください。
 
-## Installation
+# Development Setup
 
-Step-by-step install instructions. Example:
+- 推奨 Python: 3.8+
+- 開発フロー:
+	1. 仮想環境を作成
+	2. 依存インストール
+	3. `src/` を編集、`pytest tests/` で確認
+- 推奨ツール: `pytest`
+- 使用データベース: PostgreSQL (Docker コンテナ内)
+- 開発(Development) 環境では `docker/docker-compose.dev.yml` を使用
+    - データベースはローカルホストのポート5432にマッピング
+    - 自由にデータをリセット・変更可能
+- 本番(Production) 環境では `docker/docker-compose.prod.yml` を使用
+    - データベースは別コンテナで永続化
+    - docker内のnetworkで接続
 
-1. Clone the repo
-2. Create a virtualenv
-3. Install dependencies
+---
 
-## Usage
 
-How to run the application and common use-cases. Include examples.
+# Project Structure
 
-## Configuration
+- `docs/` — 設計書・ユーザーガイド（`docs/project_design.md` を参照）
+- `docker/` — PostgreSQL、コンテナ設定
+- `data/` — DB ボリュームやテンプレート、ログ
+- `jobs/` — ジョブ単位のワークディレクトリ（`jobs/comsol/job_YYYYMMDD_HHMMSS/`）
+- `src/` — アプリケーションコード
+	- `src/services/`
+        -  `job_generator.py`, `batch_executor.py`, `result_analyzer.py`
+	- `src/optimizers/` — Optuna 実装等
+	- `src/data/` — DB 接続・モデル
+- `tests/` — 単体テスト
+- `scripts/` — 補助スクリプト
 
-Where to put configuration files or environment variables. Mention files like `.env`, `docker-compose.*.yml`.
+# Where to find more
 
-## Development
+- 詳細設計: `docs/project_design.md`
+- DB スキーマ: `docs/database.md`
+- ユーザー向け手順: `docs/user_guide.md`
 
-Developer notes: how to set up the dev environment, run linters, formatters, and start services locally.
+---
 
-## Testing
+この README は短く要点をまとめたものです。細かい操作や設定は `docs/` 配下の各ドキュメントを参照してください。
 
-How to run tests and a short note about test coverage.
-
-framework: pytest, unittest
-Commands to run tests, e.g., `pytest tests/`
-
-## Project Structure
-
-Briefly document the repository layout and purpose of important folders (e.g., `src/`, `data/`, `docker/`).
-
-## Contributing
 
 Guidelines for contributing, code style, branches, and pull request process.
 
-## License
-
-Specify license or placeholder.
-
-## Acknowledgements
-
-Credits, references, or links.
-
-### Fill-in checklist
-
-- [ ] Project title and short description
-- [ ] Requirements (versions)
-- [ ] Installation steps
-- [ ] Usage examples
-- [ ] Configuration note
-- [ ] Development steps
-- [ ] Tests commands
-
-<!-- You can edit this template to add more project-specific sections -->
 
