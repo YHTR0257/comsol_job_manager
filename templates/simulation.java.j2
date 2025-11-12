@@ -1,0 +1,699 @@
+import com.comsol.model.*;
+import com.comsol.model.util.*;
+import java.lang.Math;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.Files;
+import java.io.IOException;
+
+public class rve_LATTICE_NNN_SHIFT_EE11EE22EE33EE44EE55EE66_oOOOaAAAbBBB_pPOISSON {
+
+    public static Model run() {
+        String file = <>;
+        String path = ;
+        String stlfile = ;
+        Path output = Paths.get(path+"/"+file);
+
+        double aa, bb, cc, bc, ca, ab, rs, rb;
+        aa = lconst; bb = lconst; cc = lconst;
+        bc = 90.0; ca = 90.0; ab = 90.0;
+        rs = AAA./100.;
+        rb = BBB./100.;
+
+        double dpos = 0.SHIFT;
+        double[][] loc = translatePoints(loc_, dpos);
+
+        int nnn = NNN;
+        int nx, ny, nz;
+        nx = nnn; ny = nnn; nz = nnn;
+
+        double[][] points = lattice_points(e, loc, nx, ny, nz);
+
+        double[][][] lines = select_bonds(points, d_min, d_max);
+
+        double[] blk_size = new double[3];
+        double[] uni_size = new double[3];
+        for (int i = 0; i < 3; i++){
+            blk_size[i] = rs*2 + e[0][i]*nx + e[1][i]*ny + e[2][i]*nz;
+            uni_size[i] = e[0][i]*nx + e[1][i]*ny + e[2][i]*nz;
+        }
+
+        double[][] rotate1 = unit_tensor(rotate);
+        double[][] rotate1_ = transpose(rotate1);
+
+        Model model = ModelUtil.create("Model");
+
+        model.modelPath(path);
+
+        model.label(file + ".mph");
+
+        model.param().set("disp", "0");
+        model.param().set("Lx", uni_size[0]+"[mm]");
+        model.param().set("Ly", uni_size[1]+"[mm]");
+        model.param().set("Lz", uni_size[2]+"[mm]");
+        model.param().set("lconst", lconst+"[mm]");
+        // model.param().set("xRs", xRs);
+        // model.param().set("xRb_Rs", xRb_Rs);
+        // model.param().set("Rs", "xRs * lconst");
+        // model.param().set("Rb", "xRb_Rs * Rs");
+        
+        model.param().set("Rs", rs);
+        model.param().set("Rb", rb);
+        
+        model.param().set("E11", 1);
+        model.param().set("E21", 1);
+        model.param().set("E31", 1);
+        model.param().set("E12", 1);
+        model.param().set("E22", 1);
+        model.param().set("E32", 1);
+        model.param().set("E13", 1);
+        model.param().set("E23", 1);
+        model.param().set("E33", 1);
+        model.param().set("delta", delta_);
+
+        model.component().create("comp1", true);
+
+        int ttt = 3;
+        /* テーブル作成 */
+        for (int i = 1; i < ttt; i++){
+            model.result().table().create("tbl"+i, "Table");
+            model.result().table("tbl"+i).label("Maximum mises stress "+i);
+        }
+
+        model.result().table().create("tbl"+ttt, "Table");
+        model.result().table("tbl"+ttt).label("Probe Table");
+
+        model = geometry(model, uni_size, points, lines);
+
+        for (int i = 1; i < 10; i++){
+            model.component("comp1").probe().create("dom"+i, "Domain");
+        }
+
+        model.component("comp1").cpl().create("genext1", "GeneralExtrusion");
+        model.component("comp1").cpl().create("genext2", "GeneralExtrusion");
+        model.component("comp1").cpl().create("genext3", "GeneralExtrusion");
+        model.component("comp1").cpl().create("maxop1", "Maximum");
+
+        model.component("comp1").cpl("genext1").selection().named("geom1_boxsel1");
+        model.component("comp1").cpl("genext2").selection().named("geom1_boxsel3");
+        model.component("comp1").cpl("genext3").selection().named("geom1_boxsel5");
+        model.component("comp1").cpl("maxop1").selection().set(1);
+
+        model.component("comp1").cpl("genext1").label("coupleX");
+        model.component("comp1").cpl("genext1").set("opname", "coupleX");
+        model.component("comp1").cpl("genext1").set("srcframe", "material");
+        model.component("comp1").cpl("genext1").set("dstmap", new String[]{"X-Lx", "Y", "Z"});
+        model.component("comp1").cpl("genext2").label("coupleY");
+        model.component("comp1").cpl("genext2").set("opname", "coupleY");
+        model.component("comp1").cpl("genext2").set("srcframe", "material");
+        model.component("comp1").cpl("genext2").set("dstmap", new String[]{"X", "Y-Ly", "Z"});
+        model.component("comp1").cpl("genext3").label("coupleZ");
+        model.component("comp1").cpl("genext3").set("opname", "coupleZ");
+        model.component("comp1").cpl("genext3").set("srcframe", "material");
+        model.component("comp1").cpl("genext3").set("dstmap", new String[]{"X", "Y", "Z-Lz"});
+
+        model.component("comp1").coordSystem("sys1").label("Boundary System 1");
+
+        model.component("comp1").mesh().create("mesh1");
+        model.component("comp1").mesh("mesh1").autoMeshSize(5);
+        
+        model.component("comp1").mesh("mesh1").create("ftri1", "FreeTri");
+        model.component("comp1").mesh("mesh1").create("ftri2", "FreeTri");
+        model.component("comp1").mesh("mesh1").create("ftri3", "FreeTri");
+        model.component("comp1").mesh("mesh1").feature("ftri1").selection().named("geom1_boxsel1");
+        model.component("comp1").mesh("mesh1").feature("ftri2").selection().named("geom1_boxsel3");
+        model.component("comp1").mesh("mesh1").feature("ftri3").selection().named("geom1_boxsel5");
+
+        model.component("comp1").mesh("mesh1").create("cpf1", "CopyFace");
+        model.component("comp1").mesh("mesh1").create("cpf2", "CopyFace");
+        model.component("comp1").mesh("mesh1").create("cpf3", "CopyFace");
+        model.component("comp1").mesh("mesh1").feature("cpf1").selection("source").named("geom1_boxsel1");
+        model.component("comp1").mesh("mesh1").feature("cpf1").selection("destination").named("geom1_boxsel2");
+        model.component("comp1").mesh("mesh1").feature("cpf2").selection("source").named("geom1_boxsel3");
+        model.component("comp1").mesh("mesh1").feature("cpf2").selection("destination").named("geom1_boxsel4");
+        model.component("comp1").mesh("mesh1").feature("cpf3").selection("source").named("geom1_boxsel5");
+        model.component("comp1").mesh("mesh1").feature("cpf3").selection("destination").named("geom1_boxsel6");
+
+        model.component("comp1").mesh("mesh1").create("ftet1", "FreeTet");
+        model.component("comp1").mesh("mesh1").run();
+
+        // model.component("comp1").mesh("mesh1").export().set("stlformat", "binary");
+        // model.component("comp1").mesh("mesh1").export().set("filename", stlfile+file+".stl");
+        // model.component("comp1").mesh("mesh1").export(stlfile+file+".stl");
+
+        /* 材料指定 */
+        model.component("comp1").material().create("mat1", "Common");
+        model.component("comp1").material("mat1").propertyGroup("def").set("density", "950");
+        model.component("comp1").material("mat1").propertyGroup("def").set("poissonsratio", pratio+"-eps");
+        model.component("comp1").material("mat1").propertyGroup("def").set("youngsmodulus", "10[MPa]");
+
+        /* 固体力学 */
+        model.component("comp1").physics().create("solid", "SolidMechanics", "geom1");
+
+        model.component("comp1").physics("solid").create("fix1", "Fixed", 0);
+        model.component("comp1").physics("solid").feature("fix1").selection().named("geom1_boxsel7");
+
+        model.component("comp1").physics("solid").create("disp1", "Displacement2", 2);
+        model.component("comp1").physics("solid").feature("disp1").selection().named("geom1_boxsel2");
+        model.component("comp1").physics("solid").create("disp2", "Displacement2", 2);
+        model.component("comp1").physics("solid").feature("disp2").selection().named("geom1_boxsel4");
+        model.component("comp1").physics("solid").create("disp3", "Displacement2", 2);
+        model.component("comp1").physics("solid").feature("disp3").selection().named("geom1_boxsel6");
+
+        model.component("comp1").physics("solid").feature("disp1").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp1")
+             .set("U0", new String[][]{{"coupleX(u) - E11 * X * disp"},
+                                        {"coupleX(v) - E21 * X * disp"},
+                                        {"coupleX(w) - E31 * X * disp"}});
+        model.component("comp1").physics("solid").feature("disp1").label("periodicX");
+        model.component("comp1").physics("solid").feature("disp1").featureInfo("info").label("Equation View");
+        model.component("comp1").physics("solid").feature("disp2").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp2")
+             .set("U0", new String[][]{{"coupleY(u) - E12 * Y * disp"},
+                                        {"coupleY(v) - E22 * Y * disp"},
+                                        {"coupleY(w) - E32 * Y * disp"}});
+        model.component("comp1").physics("solid").feature("disp2").label("periodicY");
+        model.component("comp1").physics("solid").feature("disp2").featureInfo("info").label("Equation View");
+        model.component("comp1").physics("solid").feature("disp3").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp3")
+             .set("U0", new String[][]{{"coupleZ(u) - E13 * Z * disp"},
+                                        {"coupleZ(v) - E23 * Z * disp"},
+                                        {"coupleZ(w) - E33 * Z * disp"}});
+        model.component("comp1").physics("solid").feature("disp3").label("periodicZ");
+        model.component("comp1").physics("solid").feature("disp3").featureInfo("info").label("Equation View");
+
+        /* プローブ設定 */
+        model.component("comp1").probe("dom1").label("P11");
+        model.component("comp1").probe("dom1").set("probename", "P11");
+        model.component("comp1").probe("dom1").set("expr", "-solid.PxX");
+        model.component("comp1").probe("dom1").set("unit", "MPa");
+        model.component("comp1").probe("dom1").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom1").set("window", "window1");
+
+        model.component("comp1").probe("dom2").label("P21");
+        model.component("comp1").probe("dom2").set("probename", "P21");
+        model.component("comp1").probe("dom2").set("expr", "-solid.PyX");
+        model.component("comp1").probe("dom2").set("unit", "MPa");
+        model.component("comp1").probe("dom2").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom2").set("window", "window1");
+
+        model.component("comp1").probe("dom3").label("P31");
+        model.component("comp1").probe("dom3").set("probename", "P31");
+        model.component("comp1").probe("dom3").set("expr", "-solid.PzX");
+        model.component("comp1").probe("dom3").set("unit", "MPa");
+        model.component("comp1").probe("dom3").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom3").set("window", "window1");
+
+        model.component("comp1").probe("dom4").label("P12");
+        model.component("comp1").probe("dom4").set("probename", "P12");
+        model.component("comp1").probe("dom4").set("expr", "-solid.PxY");
+        model.component("comp1").probe("dom4").set("unit", "MPa");
+        model.component("comp1").probe("dom4").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom4").set("window", "window1");
+
+        model.component("comp1").probe("dom5").label("P22");
+        model.component("comp1").probe("dom5").set("probename", "P22");
+        model.component("comp1").probe("dom5").set("expr", "-solid.PyY");
+        model.component("comp1").probe("dom5").set("unit", "MPa");
+        model.component("comp1").probe("dom5").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom5").set("window", "window1");
+
+        model.component("comp1").probe("dom6").label("P32");
+        model.component("comp1").probe("dom6").set("probename", "P32");
+        model.component("comp1").probe("dom6").set("expr", "-solid.PzY");
+        model.component("comp1").probe("dom6").set("unit", "MPa");
+        model.component("comp1").probe("dom6").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom6").set("window", "window1");
+
+        model.component("comp1").probe("dom7").label("P13");
+        model.component("comp1").probe("dom7").set("probename", "P13");
+        model.component("comp1").probe("dom7").set("expr", "-solid.PxZ");
+        model.component("comp1").probe("dom7").set("unit", "MPa");
+        model.component("comp1").probe("dom7").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom7").set("window", "window1");
+
+        model.component("comp1").probe("dom8").label("P23");
+        model.component("comp1").probe("dom8").set("probename", "P23");
+        model.component("comp1").probe("dom8").set("expr", "-solid.PyZ");
+        model.component("comp1").probe("dom8").set("unit", "MPa");
+        model.component("comp1").probe("dom8").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom8").set("window", "window1");
+
+        model.component("comp1").probe("dom9").label("P33");
+        model.component("comp1").probe("dom9").set("probename", "P33");
+        model.component("comp1").probe("dom9").set("expr", "-solid.PzZ");
+        model.component("comp1").probe("dom9").set("unit", "MPa");
+        model.component("comp1").probe("dom9").set("table", "tbl"+ttt);
+        model.component("comp1").probe("dom9").set("window", "window1");
+
+        /* スタディ作成 */
+        model.study().create("std1");
+        model.study("std1").setStoreSolution(true);
+        model.study("std1").create("param", "Parametric");
+        model.study("std1").create("stat", "Stationary");
+
+        model.sol().create("sol1");
+        model.sol("sol1").study("std1");
+        model.sol("sol1").attach("std1");
+        model.sol("sol1").create("st1", "StudyStep");
+        model.sol("sol1").create("v1", "Variables");
+        model.sol("sol1").create("s1", "Stationary");
+        model.sol("sol1").feature("s1").create("p1", "Parametric");
+        model.sol("sol1").feature("s1").create("fc1", "FullyCoupled");
+        model.sol("sol1").feature("s1").create("se1", "Segregated");
+        // model.sol("sol1").feature("s1").feature("se1").create("ss1", "SegregatedStep");
+        model.sol("sol1").feature("s1").feature().remove("fcDef");
+
+        model.sol().create("sol2");
+        model.sol("sol2").study("std1");
+        model.sol("sol2").label("Parametric 1");
+
+        /* ジョブ構成 */
+        model.batch().create("p1", "Parametric");
+        model.batch("p1").create("so1", "Solutionseq");
+        model.batch("p1").study("std1");
+
+        /* 結果出力のフレームワーク */
+        model.result().dataset("dset1").set("probetag", "dom9");
+
+        model.result().dataset().create("dset3", "Solution");
+
+        for (int i = 1; i < ttt; i++){
+            String dset = "dset" + (i+3);
+            model.result().dataset().create(dset, "Solution");
+            model.result().numerical().create("gev"+i, "EvalGlobal");
+        }
+
+        for (int i = 1; i < 10; i++){
+            model.result().dataset().create("avh"+i, "Average");
+            model.result().dataset("avh"+i).set("probetag", "dom"+i);
+            model.result().dataset("avh"+i).selection().geom("geom1", 3);
+            model.result().dataset("avh"+i).selection().set(1);
+
+            model.result().numerical().create("pev"+i, "EvalPoint");
+            model.result().numerical("pev"+i).set("probetag", "dom"+i);
+
+            model.component("comp1").probe("dom"+i).genResult(null);
+        }
+
+
+        model.result().dataset().create("av1", "Average");
+        model.result().dataset("av1").set("intsurface", true);
+        model.result().dataset("av1").set("intvolume", true);
+        model.result().dataset("av1").set("data", "dset2");
+        model.result().dataset("av1").set("showlevel", "off");
+        model.result().dataset("av1").selection().geom("geom1", 3);
+        model.result().dataset("av1").selection().set(1);
+        model.result().dataset("av1").set("method", "integration");
+        model.result().dataset("av1").set("intorderactive", true);
+
+        // double[][] e11_ = rot(rotate1, rot(new double[][]{{1,0,0},{0,0,0},{0,0,0}}, rotate1_));
+        // double[][] e22_ = rot(rotate1, rot(new double[][]{{0,0,0},{0,1,0},{0,0,0}}, rotate1_));
+        double[][] e33_ = rot(rotate1, rot(new double[][]{{0,0,0},{0,0,0},{0,0,1}}, rotate1_));
+        // double[][] e23_ = rot(rotate1, rot(new double[][]{{0,0,0},{0,0,0.5},{0,0.5,0}}, rotate1_));
+        double[][] e31_ = rot(rotate1, rot(new double[][]{{0,0,0.5},{0,0,0},{0.5,0,0}}, rotate1_));
+        // double[][] e12_ = rot(rotate1, rot(new double[][]{{0,0.5,0},{0.5,0,0},{0,0,0}}, rotate1_));
+
+        String ddd = "*delta ";
+        String dd = "*delta";
+        String e11 = e33_[0][0]+ddd+e31_[0][0]+ddd;
+        String e21 = e33_[0][1]+ddd+e31_[0][1]+ddd;
+        String e31 = e33_[0][2]+ddd+e31_[0][2]+ddd;
+        String e12 = e33_[1][0]+ddd+e31_[1][0]+ddd;
+        String e22 = e33_[1][1]+ddd+e31_[1][1]+ddd;
+        String e32 = e33_[1][2]+ddd+e31_[1][2]+ddd;
+        String e13 = e33_[2][0]+ddd+e31_[2][0]+ddd;
+        String e23 = e33_[2][1]+ddd+e31_[2][1]+ddd;
+        String e33 = e33_[2][2]+ddd+e31_[2][2]+ddd;
+
+        /* スタディのセットアップ */
+        model.study("std1").label("Study: Stationary");
+
+        model.study("std1").label("Study 1");
+        model.study("std1").feature("param").label("Parametric Sweep");
+        model.study("std1").feature("param").set("pname", new String[]{"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"});
+        model.study("std1").feature("param")
+             .set("plistarr", new String[]{e11,e21,e31,e12,e22,e32,e13,e23,e33});
+        model.study("std1").feature("param").set("punit", new String[]{"", "", "", "", "", "", "", "", ""});
+
+        model.study("std1").feature("stat").label("Stationary");
+        model.study("std1").feature("stat").set("geometricNonlinearity", true);
+        // model.study("std1").feature("stat").set("plot", true);
+        // model.study("std1").feature("stat").set("plotgroup", "pg0")
+        model.study("std1").feature("stat").set("useparam", true);
+        model.study("std1").feature("stat").set("pname", new String[]{"disp"});
+        model.study("std1").feature("stat").set("plistarr", dstep);
+        model.study("std1").feature("stat").set("punit", new String[]{""});
+
+        model.sol("sol1").attach("std1");
+        model.sol("sol1").label("Solution 1");
+        model.sol("sol1").feature("v1").label("Dependent Variables 1");
+        model.sol("sol1").feature("v1").set("clistctrl", new String[]{"p1"});
+        model.sol("sol1").feature("v1").set("cname", new String[]{"disp"});
+        model.sol("sol1").feature("v1").set("clist", dstep);
+        model.sol("sol1").feature("s1").label("Stationary Solver 1");
+        model.sol("sol1").feature("s1").set("stol", "1e-7");
+        model.sol("sol1").feature("s1").set("reacf", false);
+        model.sol("sol1").feature("s1").set("probesel", "none");
+        model.sol("sol1").feature("s1").feature("dDef").label("Direct");
+        model.sol("sol1").feature("s1").feature("dDef").set("ooc", false);
+        model.sol("sol1").feature("s1").feature("dDef").set("rhob", 400);
+        model.sol("sol1").feature("s1").feature("aDef").label("Advanced");
+        // model.sol("sol1").feature("s1").feature("p1").label("Parametric 1");
+        // model.sol("sol1").feature("s1").feature("p1").set("pname", new String[]{"disp"});
+        // model.sol("sol1").feature("s1").feature("p1").set("plistarr", dstep);
+        // model.sol("sol1").feature("s1").feature("p1").set("punit", new String[]{""});
+        // model.sol("sol1").feature("s1").feature("p1").set("uselsqdata", false);
+        // model.sol("sol1").feature("s1").feature("p1").set("plot", true);
+        // model.sol("sol1").feature("s1").feature("p1").set("plotgroup", "pg0");
+        model.sol("sol1").feature("s1").feature("fc1").label("Fully Coupled 1");
+        model.sol("sol1").feature("s1").feature("se1").set("segterm", "iter");
+        model.sol("sol1").feature("s1").feature("se1").set("plot", true);
+        // model.sol("sol1").feature("s1").feature("se1").feature("ssDef").set("subtermconst", "iter");
+        // model.sol("sol1").feature("s1").feature("se1").feature("ssDef").set("maxsubiter", 10);
+        // model.sol("sol1").feature("s1").feature("se1").feature("ssDef").set("subntolfact", 1000000);
+        // model.sol("sol1").runAll();
+
+
+        model.batch("p1").set("control", "param");
+        model.batch("p1").set("pname", new String[]{"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"});
+        model.batch("p1")
+             .set("plistarr", new String[]{e11,e21,e31,e12,e22,e32,e13,e23,e33});
+        model.batch("p1").set("punit", new String[]{"", "", "", "", "", "", "", "", ""});
+        model.batch("p1").set("err", true);
+        model.batch("p1").feature("so1").set("seq", "sol1");
+        model.batch("p1").feature("so1").set("psol", "sol2");
+        model.batch("p1").feature("so1")
+             .set("param", new String[]{"\"E33\",\""+e33_[0][0]+dd+"\",\"E31\",\""+e31_[0][0]+dd+"\"",
+                                        "\"E33\",\""+e33_[0][1]+dd+"\",\"E31\",\""+e31_[0][1]+dd+"\"",
+                                        "\"E33\",\""+e33_[0][2]+dd+"\",\"E31\",\""+e31_[0][2]+dd+"\"",
+                                        "\"E33\",\""+e33_[1][0]+dd+"\",\"E31\",\""+e31_[1][0]+dd+"\"",
+                                        "\"E33\",\""+e33_[1][1]+dd+"\",\"E31\",\""+e31_[1][1]+dd+"\"",
+                                        "\"E33\",\""+e33_[1][2]+dd+"\",\"E31\",\""+e31_[1][2]+dd+"\"",
+                                        "\"E33\",\""+e33_[2][0]+dd+"\",\"E31\",\""+e31_[2][0]+dd+"\"",
+                                        "\"E33\",\""+e33_[2][1]+dd+"\",\"E31\",\""+e31_[2][1]+dd+"\"",
+                                        "\"E33\",\""+e33_[2][2]+dd+"\",\"E31\",\""+e31_[2][2]+dd+"\""});
+        model.batch("p1").attach("std1");
+        model.batch("p1").run();
+
+        model.result().dataset("dset2").set("probetag", "sol1");
+        model.result().dataset("dset3").set("probetag", "sol2");
+
+        for (int i = 1; i < ttt; i++){
+            String dset = "dset" + (i+3);
+            model.result().dataset(dset).set("solution", "sol"+(i+2));
+
+            model.result().numerical("gev"+i).set("data", dset);
+            model.result().numerical("gev"+i).set("probetag", "none");
+
+            model.result().dataset(dset).label("max_mises"+i);
+
+            model.result().numerical("gev"+i).label("max_mises"+i);
+            model.result().numerical("gev"+i).set("solrepresentation", "solnum");
+            model.result().numerical("gev"+i).set("table", "tbl"+i);
+            model.result().numerical("gev"+i).set("expr", new String[]{"comp1.maxop1(solid.mises)"});
+            model.result().numerical("gev"+i).set("unit", new String[]{"MPa"});
+            model.result().numerical("gev"+i).set("descr", new String[]{""});
+            model.result().numerical("gev"+i)
+                 .set("const", new String[][]{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
+                                            {"solid.refpnty", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (y \u5ea7\u6a19)"},
+                                            {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}});
+
+            model.result().numerical("gev"+i).setResult();
+        }
+
+        for (int i = 1; i < 10; i++){
+            model.result().numerical("pev"+i).set("looplevelinput", new String[]{"manual"});
+            model.result().numerical("pev"+i)
+                 .set("const", new String[][]{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
+                                            {"solid.refpnty", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (y \u5ea7\u6a19)"},
+                                            {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}});
+        }
+
+        model.result().numerical().create("pev10", "EvalPoint");
+        model.result().numerical("pev10").set("data", "av1");
+        model.result().table().create("tbl"+(ttt+1), "Table");
+        model.result().table("tbl"+(ttt+1)).set("tablebuffersize", 1000000);
+        model.result().table("tbl"+(ttt+1)).comments("Engineering Stress");
+        model.result().numerical("pev10").setIndex("expr", "-solid.PxX", 0);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 0);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PyX", 1);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 1);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PzX", 2);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 2);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PxY", 3);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 3);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PyY", 4);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 4);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PzY", 5);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 5);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PxZ", 6);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 6);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PyZ", 7);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 7);
+        model.result().numerical("pev10").setIndex("expr", "-solid.PzZ", 8);
+        model.result().numerical("pev10").setIndex("unit", "MPa", 8);
+        model.result().numerical("pev10").set("table", "tbl"+(ttt+1));
+        model.result().numerical("pev10").setResult();
+        model.result().table("tbl"+(ttt+1)).set("storetable", "inmodel");
+        model.result().export().create("table1", "tbl"+(ttt+1), "Table");
+        model.result().export("table1")
+             .set("filename", output+"/"+file+"_kirchhoff.txt");
+        model.result().export("table1").run();
+
+        model.result().table().create("tbl"+(ttt+2), "Table");
+        model.result().table("tbl"+(ttt+2)).set("tablebuffersize", 10000000);
+        for (int i = 1; i < ttt; i++){
+            model.result().numerical("gev"+i).set("table", "tbl"+(ttt+2));
+            if (i == 1){
+                model.result().numerical("gev"+i).setResult();
+            }else{
+                model.result().numerical("gev"+i).appendResult();
+            }
+            model.result().table("tbl"+(ttt+2)).setIndex("headers", "max_mises"+i, i, 1);
+        }
+        model.result().table("tbl"+(ttt+2)).set("storetable", "inmodel");
+        model.result().export().create("table2", "tbl"+(ttt+2), "Table");
+        model.result().export("table2")
+             .set("filename", output+"/"+file+"_maxmises.txt");
+        model.result().export("table2").run();
+
+
+        /* 応力表示 */
+        model.result().create("pg2", "PlotGroup3D");
+        model.result("pg2").set("data", "dset2");
+        model.result("pg2").create("surf1", "Surface");
+        model.result("pg2").feature("surf1").set("expr", "solid.mises");
+        model.result("pg2").feature("surf1").create("def", "Deform");
+
+        model.result("pg2").label("\u5fdc\u529b (solid)");
+        model.result("pg2").set("titletype", "custom");
+        model.result("pg2").set("typeintitle", false);
+        model.result("pg2").set("descriptionintitle", false);
+        model.result("pg2").set("expressionintitle", true);
+        model.result("pg2").set("showlegendsmaxmin", true);
+        model.result("pg2").feature("surf1").set("unit", "MPa");
+        model.result("pg2").feature("surf1")
+             .set("const", new String[][]{{"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
+                                        {"solid.refpnty", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (y \u5ea7\u6a19)"},
+                                        {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}});
+        model.result("pg2").feature("surf1").set("colortable", "RainbowLight");
+        model.result("pg2").feature("surf1").set("resolution", "normal");
+        model.result("pg2").feature("surf1").feature("def").set("scaleactive", true);
+
+        model.result().create("pg3", "PlotGroup1D");
+        model.result("pg3").set("probetag", "window1");
+        model.result("pg3").create("tblp1", "Table");
+        model.result("pg3").feature("tblp1").set("probetag", "dom1,dom2,dom3,dom4,dom5,dom6,dom7,dom8,dom9");
+        model.result("pg3").set("ylog", true);
+        model.result("pg3").set("showmanualgrid", true);
+        model.result("pg3").set("showxspacing", true);
+        model.result("pg3").set("showyspacing", false);
+        model.result("pg3").set("showsecyspacing", false);
+        model.result("pg3").set("showsecyextra", false);
+        model.result("pg3").set("window", "window1");
+
+        /* Animation */
+        model.result().export().create("anim1", "Animation");
+        model.result().export("anim1").set("plotgroup", "pg2");
+        model.result().export("anim1").set("target", "player");
+        model.result().export("anim1").set("synchronize", false);
+        model.result().export("anim1").set("fontsize", "9");
+        model.result().export("anim1").set("customcolor", new double[]{1, 1, 1});
+        model.result().export("anim1").set("background", "color");
+        model.result().export("anim1").set("gltfincludelines", "on");
+        model.result().export("anim1").set("title1d", "on");
+        model.result().export("anim1").set("legend1d", "on");
+        model.result().export("anim1").set("logo1d", "on");
+        model.result().export("anim1").set("options1d", "on");
+        model.result().export("anim1").set("title2d", "off");
+        model.result().export("anim1").set("legend2d", "on");
+        model.result().export("anim1").set("logo2d", "off");
+        model.result().export("anim1").set("options2d", "on");
+        model.result().export("anim1").set("title3d", "on");
+        model.result().export("anim1").set("legend3d", "on");
+        model.result().export("anim1").set("logo3d", "on");
+        model.result().export("anim1").set("options3d", "on");
+        model.result().export("anim1").set("axisorientation", "on");
+        model.result().export("anim1").set("grid", "on");
+        model.result().export("anim1").set("axes1d", "on");
+        model.result().export("anim1").set("axes2d", "on");
+        model.result().export("anim1").set("showgrid", "on");
+        model.result().export("anim1").set("solnumtype", "level1");
+
+        model.result().export("anim1").set("target", "file");
+        model.result().export("anim1").set("maxframes", 100);
+        model.result().export("anim1").set("fps", 20);
+
+        for (int ani = 1; ani < ttt; ani++){
+            model.result().export("anim1").setIndex("singlelooplevel", ani, 1);
+            model.result().export("anim1")
+                 .set("giffilename", output+"/"+file+"_e"+ani+".gif");
+            model.result().export("anim1").run();
+        }
+
+        model.result().export("anim1").set("target", "player");
+        model.result().export("anim1").showFrame();
+
+        return model;
+    }
+    public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines){
+    }
+    private static double[][][] select_bonds(double[][] points, double d_min, double d_max){
+        double[][][] lines = new double[0][2][3];
+
+        for (int i = 0; i < points.length; i++){
+            for (int j = i; j < points.length; j++){
+                double[] p = points[i];
+                double[] q = points[j];
+                double dd = 0.;
+                for (int k = 0; k < 3; k++){
+                    dd += Math.pow(p[k] - q[k],2);
+                }
+                double d = Math.sqrt(dd);
+                if ((d>d_min) && (d<d_max)){
+                    lines = add_line(lines, p, q);
+                }
+            }
+        }
+
+        // for (int n = 0; n < 10; n++){
+        //     System.out.println(Arrays.toString(lines[n][0]));
+        //     System.out.println(Arrays.toString(lines[n][1]));
+        //     System.out.println("===================================");
+        // }
+
+        return lines;
+    }
+
+    private static double[][] add(double[][] list, double[] a){
+        int i = list.length;
+        double[][] copy = new double[i+1][]; //元より要素数が1おおきい配列を作成
+
+        System.arraycopy( list , 0 , copy , 0 , i );
+
+        copy[i] = a ;
+        list = copy; //配列の長さ違うけど、これありなんだ。。
+
+        return list;
+    }
+
+    private static double[][][] add_line(double[][][] list, double[] p, double[] q){
+        int n = list.length;
+        double[][][] copy = new double[n+1][2][3]; //元より要素数が1おおきい配列を作成
+
+        for (int i = 0; i < n; i++){
+            for (int j = 0; j < 2; j++){
+                for (int k = 0; k < 3; k++){
+                    copy[i][j][k] = list[i][j][k];
+                }
+            }
+        }
+
+        for (int k = 0; k < 3; k++){
+            copy[n][0][k] = p[k];
+            copy[n][1][k] = q[k];
+        }
+
+        return copy;
+    }
+
+    private static double[][] unit_tensor(double[][] a){
+        double[] l = new double[3];
+        double[][] b = new double[3][3];
+
+        for (int i = 0; i < a.length; i++){
+            for (int j = 0; j < a[i].length; j++){
+                l[i] = l[i] + Math.pow(a[i][j],2);
+            }
+        }
+
+        for (int i = 0; i < a.length; i++){
+            for (int j = 0; j < a[i].length; j++){
+                b[i][j] = a[i][j] / Math.sqrt(l[i]);
+            }
+        }
+
+        return b;
+    }
+
+    private static double[][] transpose(double[][] a){
+        double[][] b = new double[3][3];
+
+        for (int i = 0; i < 3; i++){
+            for (int j = 0; j < 3; j++){
+                b[i][j] = a[j][i];
+            }
+        }
+
+        return b;
+    }
+
+    private static double[][] rot(double[][] a, double[][] b){
+        double[][] rot = new double[0][3];
+
+        for (int i = 0; i < b.length; i++){
+            double[] r = {0,0,0};
+            for (int j = 0; j < a.length; j++){
+                for (int k = 0; k < 3; k++){
+                    r[j] = r[j] +  a[k][j] * b[i][k];
+                }
+            }
+            rot = add(rot,r);
+        }
+
+        return rot;
+    }
+
+    private static double min(double[] arr){
+        double min = 0.;
+
+        for (double i : arr){
+            if (i < min){
+                min = i;
+            }
+        }
+        return min;
+    }
+
+    private static double max(double[] arr){
+        double max = 0.;
+
+        for (double i : arr){
+            if (i > max){
+                max = i;
+            }
+        }
+        return max;
+    }
+
+    private static double[][] translatePoints(double[][] points, double dis){
+        double[][] p = new double[points.length][3];
+        for (int i = 0; i < points.length; i++){
+            for (int j = 0; j < points[i].length; j++){
+                p[i][j] = (points[i][j] + dis) % 1;
+            }
+        }
+        return p;
+    }
+}
