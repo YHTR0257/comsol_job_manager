@@ -33,19 +33,11 @@ def test_basic_job_generation():
     project_root = Path(__file__).parent.parent
     template_dir = project_root / "templates"
     output_dir = project_root / "jobs" / "comsol"
-    reference_java = project_root / "tmp" / "ref" / "hosoda_ref.java"
-
-    # Check if reference file exists
-    if not reference_java.exists():
-        logger.error(f"Reference Java file not found: {reference_java}")
-        logger.info("Please ensure tmp/ref/hosoda_ref.java exists")
-        return False
 
     # Create job generator
     generator = JobGenerator(
         template_dir=template_dir,
-        output_base_dir=output_dir,
-        reference_java_path=reference_java
+        output_base_dir=output_dir
     )
 
     # Define test parameters
@@ -109,16 +101,10 @@ def test_parametric_sweep():
     project_root = Path(__file__).parent.parent
     template_dir = project_root / "templates"
     output_dir = project_root / "jobs" / "comsol"
-    reference_java = project_root / "tmp" / "ref" / "hosoda_ref.java"
-
-    if not reference_java.exists():
-        logger.error(f"Reference Java file not found: {reference_java}")
-        return False
 
     generator = JobGenerator(
         template_dir=template_dir,
-        output_base_dir=output_dir,
-        reference_java_path=reference_java
+        output_base_dir=output_dir
     )
 
     # Define parameter sweep

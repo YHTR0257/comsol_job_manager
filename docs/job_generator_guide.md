@@ -16,9 +16,8 @@ from pathlib import Path
 
 # ジェネレーターの初期化
 generator = JobGenerator(
-    template_dir=Path("templates"),
-    output_base_dir=Path("jobs/comsol"),
-    reference_java_path=Path("tmp/ref/hosoda_ref.java")
+    template_dir=Path("templates"),  # templates/ must contain simulation.java.j2 and run.bat.j2
+    output_base_dir=Path("jobs/comsol")
 )
 
 # パラメータの定義
@@ -53,8 +52,7 @@ from pathlib import Path
 
 generator = JobGenerator(
     template_dir=Path("templates"),
-    output_base_dir=Path("jobs/comsol"),
-    reference_java_path=Path("tmp/ref/hosoda_ref.java")
+    output_base_dir=Path("jobs/comsol")
 )
 
 # パラメータスイープの定義
@@ -213,31 +211,51 @@ except ValueError as e:
     print(f"✗ Invalid parameters: {e}")
 ```
 
-## 参照ファイルの要件
+## テンプレートファイル
 
-参照Javaファイル（`hosoda_ref.java`）には、以下のプレースホルダーが含まれている必要があります：
+Job Generatorは以下のJinja2テンプレートを使用します：
 
-- `OOO.` → lattice_constant
-- `AAA.` → sphere_radius_ratio * 100
-- `BBB.` → bond_radius_ratio * 100
-- `POISSON.` → poisson_ratio * 100
-- `0.SHIFT` → shift
-- `NNN` → num_cells
-- `LATTICE` → lattice_type
+### `templates/simulation.java.j2`
+
+COMSOL Javaシミュレーションファイルのテンプレート。以下の変数が利用可能です：
+
+- `class_name`: Javaクラス名
+- `file_name`: 出力ファイル名
+- `output_path`: 結果出力パス
+- `stl_path`: STLファイルパス
+- `lattice_constant`: 格子定数
+- `sphere_radius_ratio`: 球の半径比
+- `bond_radius_ratio`: ボンドの半径比
+- `poisson_ratio`: ポアソン比
+- `shift`: 格子点のシフト量
+- `num_cells`: セル数
+- `lattice_type`: 格子タイプ (fcc, bcc, etc.)
+- `delta`: ひずみ増分
+- `dstep`: 変位ステップ
+- `d_min`, `d_max`: ボンド距離範囲
+- `eps`: 微小値
+
+### `templates/run.bat.j2`
+
+バッチファイルのテンプレート（上記「カスタムCOMSOLコマンドの指定」を参照）
 
 ## トラブルシューティング
 
-### エラー: Reference Java file not found
+### エラー: Template not found
 
-**原因:** 参照Javaファイルのパスが正しくありません。
+**原因:** `templates/simulation.java.j2` または `templates/run.bat.j2` が見つかりません。
 
 **解決策:**
 ```python
 from pathlib import Path
 
-ref_path = Path("tmp/ref/hosoda_ref.java")
-if not ref_path.exists():
-    print(f"File not found: {ref_path.absolute()}")
+template_dir = Path("templates")
+required_templates = ["simulation.java.j2", "run.bat.j2"]
+
+for template in required_templates:
+    template_path = template_dir / template
+    if not template_path.exists():
+        print(f"✗ Template not found: {template_path}")
 ```
 
 ### エラー: Invalid parameters
