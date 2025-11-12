@@ -55,7 +55,6 @@ Thumbs.db
 # Jobs directory (local job storage)
 /jobs/**
 !jobs/.gitkeep
-data
 
 # Java build / cache / artifacts
 *.class
@@ -74,7 +73,7 @@ data
 tmp/
 
 # Data outputs (ignore contents but keep the directory if you track .gitkeep)
-/data/**
+/data/
 !data/.gitkeep
 
 # SQLite / DB files
