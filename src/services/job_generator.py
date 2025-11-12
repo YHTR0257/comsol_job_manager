@@ -24,21 +24,17 @@ class JobGenerator:
     def __init__(
         self,
         template_dir: Path | str,
-        output_base_dir: Path | str,
-        reference_java_path: Path | str | None = None
+        output_base_dir: Path | str
     ):
         """Initialize job generator.
 
         Args:
             template_dir: Directory containing Jinja2 templates
+                         (must contain simulation.java.j2 and run.bat.j2)
             output_base_dir: Base directory for job outputs
-            reference_java_path: Path to reference Java file (optional)
         """
         self.template_dir = Path(template_dir)
         self.output_base_dir = Path(output_base_dir)
-        self.reference_java_path = (
-            Path(reference_java_path) if reference_java_path else None
-        )
 
         # Setup Jinja2 environment
         self.jinja_env = Environment(
@@ -81,15 +77,12 @@ class JobGenerator:
         _logger.info(f"Created job directory: {job_dir}")
         return job_dir
 
-    def generate_java_from_reference(
+    def generate_java_from_template(
         self,
         job_dir: Path,
         params: Dict[str, Any]
     ) -> Path:
-        """Generate Java file from reference implementation.
-
-        This uses the reference Java file as a base and injects parameters
-        for the geometry section only.
+        """Generate Java file from Jinja2 template.
 
         Args:
             job_dir: Job working directory
@@ -99,19 +92,12 @@ class JobGenerator:
             Path to generated Java file
 
         Raises:
-            FileNotFoundError: If reference Java file not found
             ValueError: If required parameters are missing
         """
-        if not self.reference_java_path or not self.reference_java_path.exists():
-            raise FileNotFoundError(
-                f"Reference Java file not found: {self.reference_java_path}"
-            )
+        _logger.info(f"Generating Java file from template for job: {job_dir.name}")
 
-        _logger.info(f"Generating Java file from reference: {self.reference_java_path}")
-
-        # Read reference file
-        with open(self.reference_java_path, 'r', encoding='utf-8') as f:
-            java_content = f.read()
+        # Load template
+        template = self.jinja_env.get_template('simulation.java.j2')
 
         # Extract parameters with defaults
         lattice_constant = params.get('lattice_constant', params.get('lconst', 1.0))
@@ -121,74 +107,48 @@ class JobGenerator:
         num_cells = params.get('num_cells', params.get('nnn', 3))
         poisson_ratio = params.get('poisson_ratio', params.get('pratio', 0.3))
         delta = params.get('delta', params.get('delta_', 0.001))
-        d_min = params.get('d_min', 0.0)
-        d_max = params.get('d_max', lattice_constant * 1.5)
         dstep = params.get('dstep', '"range(0,0.0002,0.001)"')
-
-        # Get lattice type and locations
-        lattice_type = params.get('lattice_type', 'FCC')
-        eps = params.get('eps', 1e-6)
+        lattice_type = params.get('lattice_type', 'FCC').lower()
 
         # Job metadata
         job_id = job_dir.name
         file_name = params.get('file_name', job_id)
         output_path = str(job_dir / "results")
-
-        # Replace placeholders in Java content
-        # Note: Order matters for some replacements
-        replacements = [
-            ('OOO.', str(lattice_constant)),
-            ('AAA.', str(sphere_radius_ratio * 100)),
-            ('BBB.', str(bond_radius_ratio * 100)),
-            ('POISSON.', str(poisson_ratio * 100)),
-            ('0.SHIFT', str(shift)),
-            ('NNN', str(num_cells)),
-        ]
-
-        # Apply replacements
-        modified_content = java_content
-        for old, new in replacements:
-            modified_content = modified_content.replace(old, new)
-
-        # Replace path placeholders (handle after numeric replacements)
-        modified_content = modified_content.replace(
-            'String path = "H:/kanegae/comsol_ws/hosoda2/DATETAD";',
-            f'String path = "{output_path}";'
-        )
-        modified_content = modified_content.replace(
-            'String stlfile = "H:/kanegae/comsol_ws/hosoda2/stl/";',
-            'String stlfile = "";'
-        )
-
-        # Replace file name in first occurrence
-        import re
-        modified_content = re.sub(
-            r'String file = ".*?";',
-            f'String file = "{file_name}";',
-            modified_content,
-            count=1
-        )
-
-        # Generate class name from job_id (sanitize for Java class name)
         class_name = job_id.replace('-', '_').replace('.', '_')
 
-        # Replace class name in the Java file
-        # Find the original class name pattern
-        import re
-        class_pattern = r'public class \w+'
-        modified_content = re.sub(
-            class_pattern,
-            f'public class {class_name}',
-            modified_content,
-            count=1
-        )
+        # Calculate derived values
+        d_min = params.get('d_min', 0.0)
+        d_max = params.get('d_max', lattice_constant * 1.5)
+
+        # Prepare template variables
+        template_vars = {
+            'class_name': class_name,
+            'file_name': file_name,
+            'output_path': output_path,
+            'stl_path': params.get('stl_path', ''),
+            'lattice_constant': lattice_constant,
+            'sphere_radius_ratio': sphere_radius_ratio,
+            'bond_radius_ratio': bond_radius_ratio,
+            'poisson_ratio': poisson_ratio,
+            'shift': shift,
+            'num_cells': num_cells,
+            'lattice_type': lattice_type,
+            'delta': delta,
+            'dstep': dstep,
+            'd_min': d_min,
+            'd_max': d_max,
+            'eps': params.get('eps', 1e-6),
+        }
+
+        # Render template
+        java_content = template.render(**template_vars)
 
         # Write generated Java file
         java_file_path = job_dir / f"{class_name}.java"
         with open(java_file_path, 'w', encoding='utf-8') as f:
-            f.write(modified_content)
+            f.write(java_content)
 
-        _logger.info(f"Generated Java file: {java_file_path}")
+        _logger.info(f"Generated Java file from template: {java_file_path}")
         return java_file_path
 
     def generate_batch_file(
@@ -300,7 +260,7 @@ class JobGenerator:
         job_dir = self.create_job_directory(job_id)
 
         # Generate files
-        java_file = self.generate_java_from_reference(job_dir, params)
+        java_file = self.generate_java_from_template(job_dir, params)
         batch_file = self.generate_batch_file(
             job_dir,
             java_file,
