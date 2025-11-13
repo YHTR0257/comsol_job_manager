@@ -14,6 +14,45 @@ This is the ESP (Electronic Structure Properties) project - a materials science 
 
 ## Development Commands
 
+### Job Generation and Execution
+
+```bash
+# Full workflow: Generate + Execute
+python -c "
+from src.services import JobGenerator, execute_job
+from pathlib import Path
+
+# Generate job
+generator = JobGenerator(
+    template_dir=Path('templates'),
+    output_base_dir=Path('jobs/comsol')
+)
+
+params = {
+    'lattice_constant': 1.0,
+    'sphere_radius_ratio': 0.15,
+    'bond_radius_ratio': 0.08,
+    'num_cells': 3,
+}
+
+result = generator.generate_job(params)
+job_dir = result['job_dir']
+print(f'Generated: {job_dir}')
+
+# Execute job (WSL only)
+exec_result = execute_job(job_dir, timeout=3600)
+print(f'Exit code: {exec_result.returncode}')
+"
+
+# Check COMSOL availability
+python -c "
+from src.services import BatchExecutor
+executor = BatchExecutor()
+print(f'COMSOL available: {executor.check_comsol_available()}')
+print(f'WSL environment: {executor.is_wsl}')
+"
+```
+
 ### Job Generation
 
 ```bash
@@ -144,8 +183,11 @@ WSL/Linux Environment → Job Generation → Windows COMSOL Execution
 
 **Batch Executor** (`src/services/batch_executor.py`)
 - Execute Windows batch files from WSL via cmd.exe
-- Synchronous execution with timeout management
-- WSL ↔ Windows path conversion
+- Auto-detects WSL environment
+- WSL ↔ Windows path conversion with `wslpath`
+- Synchronous and asynchronous execution modes
+- Timeout management and error handling
+- `execute_job()` convenience function for quick execution
 
 **Result Analyzer** (`src/services/result_analyzer.py`)
 - Parse kirchhoff.txt and maxmises.txt
@@ -317,7 +359,11 @@ All models inherit from `Base` and use `TimestampMixin` for automatic `created_a
 
 - Documentation is primarily in Japanese but code/docstrings should be in English
 - The project combines two domains: COMSOL lattice optimization + VASP materials analysis
-- WSL-Windows integration is critical for COMSOL automation (runs on Windows)
+- **WSL-Windows integration is critical**: Python runs in WSL, COMSOL runs on Windows
+  - `BatchExecutor` auto-detects WSL environment
+  - Uses `cmd.exe` to execute Windows batch files
+  - Path conversion via `wslpath` (WSL → Windows)
+  - In non-WSL environments (pure Linux/Docker), batch execution logs warnings
 - Database schema is comprehensive for materials science (elastic tensors, mechanical properties, VASPKIT/LOBSTER integration)
 - Sequential execution model (no job queue) - one simulation at a time
 - Development uses Docker for PostgreSQL, but Python runs on host

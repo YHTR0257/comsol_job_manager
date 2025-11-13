@@ -7,7 +7,13 @@ COMSOL Job Manager は、COMSOL Multiphysics を用いた格子構造の形状�
 
 # Usage Instructions
 
-Installation (Docker only):
+## 環境要件
+
+- **WSL (Windows Subsystem for Linux)**: Python実行環境
+- **Windows**: COMSOL Multiphysics実行環境
+- **Docker**: PostgreSQL等のサービス
+
+## Installation
 
 このプロジェクトは依存関係をコンテナで提供する設計のため、セットアップは Docker コンテナを起動するだけです。
 
@@ -16,7 +22,45 @@ Installation (Docker only):
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-その後、設定ファイルを指定して最適化を実行してください。詳細な実行手順や `.env` の設定は `docs/user_guide.md` を参照してください。
+## 基本的な使い方
+
+### 1. ジョブ生成
+
+```python
+from src.services import JobGenerator
+from pathlib import Path
+
+generator = JobGenerator(
+    template_dir=Path("templates"),
+    output_base_dir=Path("jobs/comsol")
+)
+
+params = {
+    'lattice_constant': 1.0,
+    'sphere_radius_ratio': 0.15,
+    'bond_radius_ratio': 0.08,
+    'num_cells': 3,
+}
+
+result = generator.generate_job(params)
+print(f"Generated: {result['job_dir']}")
+```
+
+### 2. ジョブ実行（WSL環境）
+
+```python
+from src.services import execute_job
+
+# ジョブディレクトリを指定して実行
+result = execute_job("jobs/comsol/job_YYYYMMDD_HHMMSS", timeout=3600)
+
+if result.returncode == 0:
+    print("✓ Simulation completed successfully")
+else:
+    print(f"✗ Failed with code: {result.returncode}")
+```
+
+詳細な実行手順や `.env` の設定は `docs/user_guide.md` および `docs/batch_executor_guide.md` を参照してください。
 
 # Development Setup
 
@@ -53,9 +97,12 @@ docker compose -f docker/docker-compose.yml up -d
 
 # Where to find more
 
-- 詳細設計: `docs/project_design.md`
-- DB スキーマ: `docs/database.md`
-- ユーザー向け手順: `docs/user_guide.md`
+- **詳細設計**: `docs/project_design.md`
+- **DB スキーマ**: `docs/database.md`
+- **ジョブ生成**: `docs/job_generator_guide.md`
+- **ジョブ実行**: `docs/batch_executor_guide.md`
+- **ユーザー向け手順**: `docs/user_guide.md`
+- **開発者ガイド**: `CLAUDE.md`
 
 ---
 
