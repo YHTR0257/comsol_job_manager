@@ -68,7 +68,6 @@ def test_basic_job_generation():
     try:
         result = generator.generate_job(
             params=params,
-            comsol_command="comsol",  # Assumes COMSOL is in Windows PATH
             job_id=None  # Auto-generate
         )
 
@@ -130,8 +129,7 @@ def test_parametric_sweep():
 
             try:
                 result = generator.generate_job(
-                    params=params,
-                    comsol_command="comsol"  # Assumes COMSOL is in Windows PATH
+                    params=params
                 )
                 jobs_generated.append(result)
                 logger.info(f"  ✓ Generated job: rs={rs:.2f}, rb={rb:.2f}")

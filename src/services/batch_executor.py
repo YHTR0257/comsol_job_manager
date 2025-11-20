@@ -12,6 +12,7 @@ from typing import Optional
 import time
 
 from src.config.loader import get_logger
+from src.utils.path_utils import detect_wsl, wsl_to_windows_path
 
 _logger = get_logger("services.batch_executor")
 
@@ -31,38 +32,14 @@ class BatchExecutor:
             timeout: Default timeout in seconds (default: 1 hour)
         """
         self.default_timeout = timeout
-        self.is_wsl = self._detect_wsl()
+        self.is_wsl = detect_wsl()
         _logger.info(f"BatchExecutor initialized with timeout={timeout}s")
         _logger.info(f"WSL environment detected: {self.is_wsl}")
 
-    def _detect_wsl(self) -> bool:
-        """Detect if running in WSL environment.
-
-        Returns:
-            True if running in WSL, False otherwise
-        """
-        try:
-            # Check for WSL-specific files
-            import os
-            if os.path.exists('/proc/version'):
-                with open('/proc/version', 'r') as f:
-                    version = f.read().lower()
-                    if 'microsoft' in version or 'wsl' in version:
-                        return True
-
-            # Check if wslpath command exists
-            result = subprocess.run(
-                ['which', 'wslpath'],
-                capture_output=True,
-                timeout=5
-            )
-            return result.returncode == 0
-
-        except Exception:
-            return False
-
     def convert_wsl_to_windows_path(self, wsl_path: Path | str) -> str:
         """Convert WSL path to Windows path.
+
+        Deprecated: Use src.utils.path_utils.wsl_to_windows_path instead.
 
         Args:
             wsl_path: Path in WSL filesystem
@@ -73,39 +50,10 @@ class BatchExecutor:
         Raises:
             BatchExecutionError: If path conversion fails
         """
-        wsl_path = str(wsl_path)
-
-        # If not in WSL, return path as-is
-        if not self.is_wsl:
-            _logger.debug(f"Not in WSL, using path as-is: {wsl_path}")
-            return wsl_path
-
         try:
-            result = subprocess.run(
-                ['wslpath', '-w', wsl_path],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=True
-            )
-            windows_path = result.stdout.strip()
-            _logger.debug(f"Converted path: {wsl_path} -> {windows_path}")
-            return windows_path
-
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Failed to convert path: {e.stderr}"
-            _logger.error(error_msg)
-            raise BatchExecutionError(error_msg) from e
-
-        except subprocess.TimeoutExpired as e:
-            error_msg = "Path conversion timed out"
-            _logger.error(error_msg)
-            raise BatchExecutionError(error_msg) from e
-
-        except FileNotFoundError:
-            # wslpath not found, fallback to direct path
-            _logger.warning("wslpath not found, using path as-is")
-            return wsl_path
+            return wsl_to_windows_path(wsl_path)
+        except RuntimeError as e:
+            raise BatchExecutionError(str(e)) from e
 
     def execute_batch(
         self,
@@ -141,6 +89,14 @@ class BatchExecutor:
         start_time = time.time()
 
         try:
+            # Get batch file directory for cwd
+            # Note: cwd must be in WSL/Linux format (not Windows format)
+            # because subprocess.run() needs to access the actual filesystem
+            batch_path = Path(batch_file)
+            batch_dir = batch_path.parent
+            cwd = str(batch_dir)  # Use WSL path for subprocess.run()
+            _logger.debug(f"Working directory (WSL): {cwd}")
+
             # Check if cmd.exe is available (WSL environment)
             if self.is_wsl:
                 cmd = ['cmd.exe', '/c', batch_file_str]
@@ -153,13 +109,37 @@ class BatchExecutor:
                 # Try to execute directly (will fail for .bat files)
                 cmd = [batch_file_str]
 
-            # Execute command
+            # Execute command with cwd set to batch file directory
+            # Note: Windows cmd.exe output may be in cp932 (Shift-JIS)
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True,
+                text=False,  # Get bytes instead of text
                 timeout=timeout,
-                check=False  # Don't raise on non-zero exit
+                check=False,  # Don't raise on non-zero exit
+                cwd=cwd  # Set working directory (WSL path)
+            )
+
+            # Decode output with fallback for Japanese Windows
+            try:
+                stdout = result.stdout.decode('utf-8')
+                stderr = result.stderr.decode('utf-8')
+            except UnicodeDecodeError:
+                # Try cp932 (Shift-JIS) for Japanese Windows
+                try:
+                    stdout = result.stdout.decode('cp932')
+                    stderr = result.stderr.decode('cp932')
+                except UnicodeDecodeError:
+                    # Fallback to latin-1 (never fails)
+                    stdout = result.stdout.decode('latin-1')
+                    stderr = result.stderr.decode('latin-1')
+
+            # Create a new CompletedProcess with decoded text
+            result = subprocess.CompletedProcess(
+                args=result.args,
+                returncode=result.returncode,
+                stdout=stdout,
+                stderr=stderr
             )
 
             elapsed = time.time() - start_time

@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional
 from jinja2 import Environment, FileSystemLoader, Template
 
 from src.config.loader import get_logger
+from src.utils.path_utils import detect_wsl, wsl_to_windows_path
 
 _logger = get_logger("services.job_generator")
 
@@ -155,7 +156,6 @@ class JobGenerator:
         self,
         job_dir: Path,
         java_file_path: Path,
-        comsol_command: str = "comsol",
         java_class_name: Optional[str] = None
     ) -> Path:
         """Generate Windows batch file to run COMSOL using Jinja2 template.
@@ -163,8 +163,6 @@ class JobGenerator:
         Args:
             job_dir: Job working directory
             java_file_path: Path to generated Java file
-            comsol_command: COMSOL command name (default: "comsol")
-                          Assumes COMSOL is in Windows PATH
             java_class_name: Java class name (default: inferred from file)
 
         Returns:
@@ -176,14 +174,20 @@ class JobGenerator:
         # Load template
         template = self.jinja_env.get_template('run.bat.j2')
 
+        # Convert job_dir to Windows path if in WSL
+        if detect_wsl():
+            job_dir_str = wsl_to_windows_path(job_dir)
+            _logger.debug(f"Converted WSL path to Windows path: {job_dir} -> {job_dir_str}")
+        else:
+            job_dir_str = str(job_dir)
+
         # Prepare template variables
         template_vars = {
             'job_id': job_dir.name,
-            'job_dir': str(job_dir),
+            'job_dir': job_dir_str,
             'java_file_name': java_file_path.name,
             'class_name': java_class_name,
             'output_file': f"{java_class_name}.mph",
-            'comsol_command': comsol_command,
             'generated_at': datetime.now().isoformat()
         }
 
@@ -232,15 +236,12 @@ class JobGenerator:
     def generate_job(
         self,
         params: Dict[str, Any],
-        comsol_command: str = "comsol",
         job_id: Optional[str] = None
     ) -> Dict[str, Path]:
         """Generate complete job with all necessary files.
 
         Args:
             params: Simulation parameters
-            comsol_command: COMSOL command name (default: "comsol")
-                          Assumes COMSOL is in Windows PATH
             job_id: Optional job ID (auto-generated if None)
 
         Returns:
@@ -264,7 +265,6 @@ class JobGenerator:
         batch_file = self.generate_batch_file(
             job_dir,
             java_file,
-            comsol_command,
             java_class_name=java_file.stem
         )
         config_file = self.generate_config_file(job_dir, params)
