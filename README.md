@@ -48,6 +48,8 @@ print(f"Generated: {result['job_dir']}")
 
 ### 2. ジョブ実行（WSL環境）
 
+#### Pythonから実行
+
 ```python
 from src.services import execute_job
 
@@ -58,6 +60,22 @@ if result.returncode == 0:
     print("✓ Simulation completed successfully")
 else:
     print(f"✗ Failed with code: {result.returncode}")
+```
+
+#### テストスクリプトから実行
+
+```bash
+# 利用可能なジョブをリスト表示
+python3 scripts/test_job_executor.py --list
+
+# 最新のジョブを実行
+python3 scripts/test_job_executor.py --latest
+
+# 特定のジョブを実行
+python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230
+
+# タイムアウトを2時間に設定して実行
+python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230 -t 7200
 ```
 
 詳細な実行手順や `.env` の設定は `docs/user_guide.md` および `docs/batch_executor_guide.md` を参照してください。

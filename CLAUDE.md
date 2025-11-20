@@ -74,12 +74,31 @@ params = {
     'poisson_ratio': 0.3,
 }
 
-result = generator.generate_job(params, comsol_command='comsol')
+result = generator.generate_job(params)
 print(f'Generated: {result[\"job_dir\"]}')
 "
 
-# Run test suite
+# Run job generation test suite
 python scripts/test_job_generator.py
+```
+
+### Job Execution
+
+```bash
+# List available jobs
+python3 scripts/test_job_executor.py --list
+
+# Execute the most recent job
+python3 scripts/test_job_executor.py --latest
+
+# Execute specific job
+python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230
+
+# Execute with custom timeout (2 hours)
+python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230 -t 7200
+
+# Skip COMSOL availability check
+python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230 --no-check-comsol
 ```
 
 ### Database Management
@@ -304,6 +323,30 @@ X_flatten = data['flatten']
 X_shape = data['shape']
 ```
 
+**WSL-Windows Path Conversion:**
+```python
+from src.utils import detect_wsl, wsl_to_windows_path, windows_to_wsl_path
+
+# Check if running in WSL
+if detect_wsl():
+    print("Running in WSL environment")
+
+# Convert WSL path to Windows path
+wsl_path = '/home/user/project/data.txt'
+windows_path = wsl_to_windows_path(wsl_path)
+# Result: 'C:\\Users\\user\\project\\data.txt' or '\\wsl.localhost\...'
+
+# Convert Windows path to WSL path
+windows_path = 'C:\\Users\\user\\data.txt'
+wsl_path = windows_to_wsl_path(windows_path)
+# Result: '/mnt/c/Users/user/data.txt'
+
+# Use in batch executor (automatically converts paths)
+from src.services import BatchExecutor
+executor = BatchExecutor()
+executor.execute_batch('/path/to/script.bat')
+```
+
 ## Important Dependencies
 
 **Core:** numpy<2.0 (PyTorch compatibility), pandas>=2.0, pyyaml, python-dotenv
@@ -329,7 +372,8 @@ All models inherit from `Base` and use `TimestampMixin` for automatic `created_a
 - `templates/`: Jinja2 templates (run.bat.j2 for batch file generation)
 - `src/optimizers/`: Optimization algorithms (base classes and Optuna implementation)
 - `src/parsers/`: Result file parsers (kirchhoff, maxmises)
-- `src/utils/`: Utility functions (path conversion, logging helpers)
+- `src/utils/`: Utility functions (path_utils for WSL-Windows path conversion)
+- `scripts/`: Test scripts (test_job_generator.py, test_job_executor.py)
 - `docs/`: Design documents (project_design.md, database.md, user_guide.md)
 - `docker/`: Docker configurations and requirements.txt
 - `configs/dev/` and `configs/prod/`: Environment-specific YAML configs
