@@ -1,0 +1,44 @@
+job:
+  name: "Invalid Lattice - Overlapping Spheres"
+  description: "Test case with overlapping spheres"
+  scale:
+    length: 1e-3
+    force: 1e-3
+  parametric:
+    default:
+      sphere.radius: 0.2
+      beam.thickness: 0.1
+
+geometry:
+  lattice_vector:
+    - [2.0, 0.0, 0.0]
+    - [0.0, 2.0, 0.0]
+    - [0.0, 0.0, 2.0]
+  sphere:
+    - id: 1
+      radius: 0.5
+      position: [0.0, 0.0, 0.0]
+    - id: 2
+      radius: 0.5
+      position: [0.5, 0.0, 0.0]  # Too close - will overlap
+  beam: []
+
+mesh:
+  size: 5
+  type: "FreeTri"
+
+materials:
+  material_1:
+    name: "mat1"
+    youngs_modulus: 200e9
+    poissons_ratio: 0.3
+    density: 960
+
+study:
+  parametic_sweep:
+    strain:
+      delta: 0.01
+      range: [0.0, 0.05]
+  boundary_conditions:
+    fixed: true
+    copyface: true
