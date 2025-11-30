@@ -279,6 +279,266 @@ class JobGenerator:
         _logger.info(f"Job generation completed: {job_id}")
         return result
 
+    def generate_custom_lattice_job(
+        self,
+        custom_job: 'CustomLatticeJob',
+        job_id: Optional[str] = None,
+        run_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate job for custom lattice structure.
+
+        Args:
+            custom_job: CustomLatticeJob object from YAML
+            job_id: Optional specific job ID (for parametric sweeps)
+            run_id: Optional run ID for grouping multiple jobs
+
+        Returns:
+            Dictionary with paths to generated files and metadata
+        """
+        from ..data.models.custom_lattice import CustomLatticeJob
+
+        # Generate run ID if not provided (for grouping parametric sweep jobs)
+        if run_id is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            run_id = f"run_{timestamp}"
+
+        # Generate job ID if not provided
+        if job_id is None:
+            job_id = "job_001"
+
+        _logger.info(f"Generating custom lattice job: {run_id}/{job_id}")
+
+        # Create run directory
+        run_dir = self.output_base_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create job directory within run
+        job_dir = run_dir / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate Java file from custom lattice template
+        java_file = self._generate_custom_lattice_java(
+            job_dir,
+            custom_job,
+            job_id
+        )
+
+        # Generate batch file
+        batch_file = self.generate_batch_file(
+            job_dir,
+            java_file,
+            java_class_name=java_file.stem
+        )
+
+        # Generate metadata file for this job
+        metadata_file = self._generate_job_metadata(
+            job_dir,
+            custom_job,
+            job_id
+        )
+
+        result = {
+            'run_id': run_id,
+            'job_id': job_id,
+            'run_dir': run_dir,
+            'job_dir': job_dir,
+            'java_file': java_file,
+            'batch_file': batch_file,
+            'metadata_file': metadata_file
+        }
+
+        _logger.info(f"Custom lattice job generation completed: {run_id}/{job_id}")
+        return result
+
+    def _generate_custom_lattice_java(
+        self,
+        job_dir: Path,
+        custom_job: 'CustomLatticeJob',
+        job_id: str
+    ) -> Path:
+        """Generate Java file for custom lattice from template.
+
+        Args:
+            job_dir: Job directory
+            custom_job: CustomLatticeJob definition
+            job_id: Job identifier
+
+        Returns:
+            Path to generated Java file
+        """
+        # Load custom lattice template
+        template = self.jinja_env.get_template('custom_lattice.java.j2')
+
+        # Prepare template variables
+        class_name = job_id.replace('-', '_').replace('.', '_')
+        output_path = str(job_dir)
+        stl_path = str(job_dir / "structure.stl")
+
+        # Get first material (assuming single material for now)
+        first_material = list(custom_job.materials.values())[0]
+
+        # Prepare strain study parameters
+        strain_study = custom_job.study.parametric_sweep.get('strain')
+        if strain_study:
+            strain_delta = strain_study.delta
+            strain_min, strain_max = strain_study.range
+        else:
+            strain_delta = 0.01
+            strain_min, strain_max = 0.0, 0.05
+
+        template_vars = {
+            'class_name': class_name,
+            'file_name': job_id,
+            'output_path': output_path,
+            'stl_path': stl_path,
+            # Scale
+            'scale_length': custom_job.job.scale.length,
+            'scale_force': custom_job.job.scale.force,
+            # Material
+            'youngs_modulus': first_material.youngs_modulus,
+            'poissons_ratio': first_material.poissons_ratio,
+            'density': first_material.density,
+            # Mesh
+            'mesh_size': custom_job.mesh.size,
+            'mesh_type': custom_job.mesh.type,
+            # Strain study
+            'strain_delta': strain_delta,
+            'strain_min': strain_min,
+            'strain_max': strain_max,
+            # Geometry
+            'lattice_vectors': custom_job.geometry.lattice_vector,
+            'spheres': custom_job.geometry.sphere,
+            'beams': custom_job.geometry.beam,
+        }
+
+        # Render template
+        java_content = template.render(**template_vars)
+
+        # Write Java file
+        java_file_path = job_dir / f"{class_name}.java"
+        with open(java_file_path, 'w', encoding='utf-8') as f:
+            f.write(java_content)
+
+        _logger.info(f"Generated custom lattice Java file: {java_file_path}")
+        return java_file_path
+
+    def _generate_job_metadata(
+        self,
+        job_dir: Path,
+        custom_job: 'CustomLatticeJob',
+        job_id: str
+    ) -> Path:
+        """Generate metadata YAML file for the job.
+
+        Args:
+            job_dir: Job directory
+            custom_job: CustomLatticeJob definition
+            job_id: Job identifier
+
+        Returns:
+            Path to metadata file
+        """
+        import yaml
+
+        metadata = {
+            'job_id': job_id,
+            'job_name': custom_job.job.name,
+            'description': custom_job.job.description,
+            'generated_at': datetime.now().isoformat(),
+            'geometry': {
+                'num_spheres': len(custom_job.geometry.sphere),
+                'num_beams': len(custom_job.geometry.beam),
+                'lattice_vectors': custom_job.geometry.lattice_vector,
+            },
+            'scale': {
+                'length': custom_job.job.scale.length,
+                'force': custom_job.job.scale.force,
+            },
+            'parametric': {
+                'defaults': custom_job.job.parametric.default,
+            }
+        }
+
+        metadata_path = job_dir / "metadata.yml"
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            yaml.dump(metadata, f, default_flow_style=False, allow_unicode=True)
+
+        _logger.info(f"Generated metadata file: {metadata_path}")
+        return metadata_path
+
+    def generate_parametric_study_jobs(
+        self,
+        custom_job: 'CustomLatticeJob',
+        run_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate all jobs for a parametric study.
+
+        Args:
+            custom_job: CustomLatticeJob definition
+            run_id: Optional run ID (auto-generated if None)
+
+        Returns:
+            Dictionary with run information and list of generated jobs
+        """
+        from ..services.parametric_generator import ParametricGenerator
+
+        # Generate run ID
+        if run_id is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            run_id = f"run_{timestamp}"
+
+        _logger.info(f"Generating parametric study: {run_id}")
+
+        # Create run directory
+        run_dir = self.output_base_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate parameter sets
+        generator = ParametricGenerator(custom_job)
+        param_sets = generator.generate_parameter_sets()
+        sweep_info = generator.get_sweep_info()
+
+        _logger.info(f"Parametric study will generate {len(param_sets)} jobs")
+
+        # Generate run-level metadata
+        run_metadata = {
+            'run_id': run_id,
+            'job_name': custom_job.job.name,
+            'description': custom_job.job.description,
+            'generated_at': datetime.now().isoformat(),
+            'parametric_study': sweep_info,
+            'total_jobs': len(param_sets)
+        }
+
+        run_metadata_path = run_dir / "metadata.yml"
+        import yaml
+        with open(run_metadata_path, 'w', encoding='utf-8') as f:
+            yaml.dump(run_metadata, f, default_flow_style=False, allow_unicode=True)
+
+        # Generate each job
+        jobs = []
+        for param_set in param_sets:
+            # Apply parameters to create job-specific configuration
+            job_with_params = generator.apply_parameters_to_geometry(param_set)
+
+            # Generate job
+            result = self.generate_custom_lattice_job(
+                job_with_params,
+                job_id=param_set.job_id,
+                run_id=run_id
+            )
+            jobs.append(result)
+
+        _logger.info(f"Parametric study generation completed: {run_id} ({len(jobs)} jobs)")
+
+        return {
+            'run_id': run_id,
+            'run_dir': run_dir,
+            'run_metadata': run_metadata_path,
+            'total_jobs': len(jobs),
+            'jobs': jobs
+        }
+
 
 def validate_parameters(params: Dict[str, Any]) -> bool:
     """Validate simulation parameters.
