@@ -5,6 +5,7 @@ pandas>=2.0
 lxml
 pyyaml
 python-dotenv>=1.0.0
+pydantic>=2.0
 
 # 可視化・テスト（任意）
 jupyterlab
