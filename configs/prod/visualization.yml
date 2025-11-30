@@ -1,0 +1,61 @@
+# Visualization Configuration (Production)
+# Settings for parametric study result visualization
+
+visualization:
+  # Output directory for generated plots (relative to project root)
+  output_dir: "results/visualizations/prod"
+
+  # Figure settings (higher quality for production)
+  dpi: 600  # Higher resolution for publication
+  format: "pdf"  # PDF for better quality and scalability
+
+  # Matplotlib style
+  style: "seaborn-v0_8-darkgrid"
+
+  # Plot-specific settings
+  elastic_constants:
+    # Which elastic constants to plot (null for auto-detect)
+    columns: null
+    # Auto-detect elastic constant columns (C11, C12, C44, etc.)
+    auto_detect: true
+
+  poisson_zener:
+    # Column names in results DataFrame
+    poisson_column: "poisson_ratio"
+    zener_column: "zener_ratio"
+    # Default parameter to color points by (null for no coloring)
+    color_by: null  # e.g., "sphere.radius"
+
+  heatmap:
+    # Default colormap for heatmaps
+    cmap: "YlOrRd"
+    # Show annotations on heatmap cells
+    annot: true
+    # Annotation format
+    fmt: ".2f"
+
+  # Summary report settings
+  summary_report:
+    enabled: true
+    include_plots:
+      - "elastic_constants_bar"
+      - "poisson_vs_zener"
+      - "parameter_distributions"
+    max_params_in_summary: 2  # Limit parameter plots to avoid cluttering
+
+# Logging configuration
+logging:
+  level: "INFO"  # Less verbose in production
+  fmt: "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+  datefmt: "%Y-%m-%d %H:%M:%S"
+  console:
+    enabled: true
+    level: "INFO"
+  file:
+    enabled: true
+    dir: "logs"
+    filename: "visualization_prod.log"
+    level: "INFO"
+    rotate: true
+    max_bytes: 5242880  # 5 MB
+    backup_count: 10
