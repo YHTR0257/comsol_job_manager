@@ -209,12 +209,28 @@ class Parametric(BaseModel):
 
     Attributes:
         default: Default parameter values
-        sweep1: First parametric sweep (optional)
-        sweep2: Second parametric sweep (optional)
+        sweeps: List of parametric sweeps (can be any number)
+        sweep1: First parametric sweep (optional, for backward compatibility)
+        sweep2: Second parametric sweep (optional, for backward compatibility)
     """
     default: Dict[str, float]
+    sweeps: Optional[List[ParametricSweep]] = None
     sweep1: Optional[ParametricSweep] = None
     sweep2: Optional[ParametricSweep] = None
+
+    @model_validator(mode='after')
+    def consolidate_sweeps(self):
+        """Consolidate sweep1/sweep2 into sweeps list for unified handling."""
+        if self.sweeps is None:
+            self.sweeps = []
+
+        # Add sweep1 and sweep2 to sweeps list if they exist
+        if self.sweep1 is not None and self.sweep1 not in self.sweeps:
+            self.sweeps.append(self.sweep1)
+        if self.sweep2 is not None and self.sweep2 not in self.sweeps:
+            self.sweeps.append(self.sweep2)
+
+        return self
 
 
 class Scale(BaseModel):
