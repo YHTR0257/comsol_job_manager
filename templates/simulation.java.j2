@@ -3,19 +3,12 @@ import com.comsol.model.util.*;
 import java.lang.Math;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.Files;
-import java.io.IOException;
-import java.util.logging.Logger;
-import java.util.logging.Level;
 
 /**
  * COMSOL Multiphysics simulation for lattice structure elastic properties.
  * Generated from template.
  */
 public class {{ class_name }} {
-
-    // Logging
-    private static final Logger LOGGER = Logger.getLogger({{ class_name }}.class.getName());
 
     // Simulation constants
     private static final int NUM_TABLES = 3;
@@ -48,201 +41,146 @@ public class {{ class_name }} {
      * Main simulation entry point.
      */
     public static Model run() {
-        LOGGER.info("Starting COMSOL simulation");
-
         // 1. Initialize simulation parameters
-        LOGGER.info("Step 1/9: Initializing simulation parameters");
-        SimulationParams params = initializeParameters();
-        createOutputDirectory(params.output);
-        LOGGER.info("Output directory: " + params.output);
+        String file = "{{ file_name }}";
+        String path = "{{ output_path }}";
+        String stlfile = "{{ stl_path }}";
+        Path output = Paths.get(path);
 
-        // 2. Calculate lattice structure geometry
-        LOGGER.info("Step 2/9: Building lattice structure");
-        LatticeStructure lattice = buildLatticeStructure(params);
-        LOGGER.info("Generated " + lattice.points.length + " lattice points and " +
-                    lattice.lines.length + " bonds");
+        double lconst = {{ lattice_constant }};
+        double pratio = {{ poisson_ratio }} / 100.0;
+        String[] dstep = new String[]{ {{ dstep }} };
+        double delta = {{ delta }};
+
+        double rs = {{ sphere_radius_ratio }} / 100.0;
+        double rb = {{ bond_radius_ratio }} / 100.0;
+
+        String latticeType = "{{ lattice_type }}";
+        double shift = {{ shift }};
+
+        // 2. Calculate lattice structure geometry (cubic cell: 2x2x2 for proper visualization)
+        double[][] e = basis(lconst, lconst, lconst, 90.0, 90.0, 90.0);
+        double[][] loc = getLatticeTypeLocations(latticeType);
+        double[] dMinMax = getLatticeTypeBondLengths(latticeType, lconst);
+        double dMin = dMinMax[0];
+        double dMax = dMinMax[1];
+
+        loc = translatePoints(loc, shift);
+
+        // Create cubic cell (2x2x2 lattice points)
+        // FCC: 8 corner atoms (1/8 each) + 6 face-centered atoms (1/2 each) = 4 atoms total
+        double[][] points = lattice_points(e, loc, 2, 2, 2);
+        double[][][] lines = select_bonds(points, dMin, dMax);
+
+        // Cubic cell size is 2x the lattice constant
+        double[] uniSize = new double[]{2.0 * lconst, 2.0 * lconst, 2.0 * lconst};
 
         // 3. Calculate rotation matrices for strain application
-        LOGGER.info("Step 3/9: Calculating rotation matrices");
-        RotationMatrices rotation = calculateRotationMatrices();
+        double[][] rotate1 = calculateRotationMatrix();
+        double[][] rotate1_ = transpose(rotate1);
 
         // 4. Create COMSOL model
-        LOGGER.info("Step 4/9: Creating COMSOL model");
-        Model model = createModel(params);
+        Model model = createModel(file, path);
 
         // 5. Setup model components
-        LOGGER.info("Step 5/9: Setting up model parameters and result tables");
-        setupModelParameters(model, params, lattice);
+        setupModelParameters(model, lconst, rs, rb, delta, uniSize);
         createResultTables(model);
 
         // 6. Build geometry
-        LOGGER.info("Step 6/9: Building geometry");
-        model = buildGeometry(model, lattice.uniSize, lattice.points, lattice.lines);
+        model = buildGeometry(model, uniSize, points, lines);
 
         // 7. Setup simulation components
-        LOGGER.info("Step 7/9: Setting up probes, coupling, mesh, and physics");
         setupProbes(model);
         setupCouplingOperators(model);
         setupMesh(model);
-        setupPhysics(model, params);
+        setupPhysics(model, pratio);
         configureProbes(model);
 
         // 8. Setup and run study
-        LOGGER.info("Step 8/9: Configuring study, solver, and batch job");
-        setupStudy(model, params, rotation);
-        setupSolver(model, params);
-        setupBatchJob(model, rotation);
+        setupStudy(model, dstep, delta, rotate1, rotate1_);
+        setupSolver(model, dstep);
+        setupBatchJob(model, delta, rotate1, rotate1_);
 
         // 9. Execute and export results
-        LOGGER.info("Step 9/9: Running batch job and exporting results");
-        runBatchAndExportResults(model, params);
-        setupVisualization(model, params);
+        runBatchAndExportResults(model, file, output);
+        setupVisualization(model, file, output);
 
-        LOGGER.info("Simulation completed successfully");
         return model;
-    }
-
-    /* ========== Parameter Initialization ========== */
-
-    private static SimulationParams initializeParameters() {
-        SimulationParams p = new SimulationParams();
-
-        p.file = "{{ file_name }}";
-        p.path = "{{ output_path }}";
-        p.stlfile = "{{ stl_path }}";
-        p.output = Paths.get(p.path + "/" + p.file);
-
-        p.lconst = {{ lattice_constant }};
-        p.pratio = {{ poisson_ratio }} / 100.0;
-        p.dstep = new String[]{ {{ dstep }} };
-        p.delta = {{ delta }};
-
-        p.rs = {{ sphere_radius_ratio }} / 100.0;
-        p.rb = {{ bond_radius_ratio }} / 100.0;
-
-        p.latticeType = "{{ lattice_type }}";
-        p.shift = {{ shift }};
-        p.numCells = {{ num_cells }};
-
-        return p;
-    }
-
-    private static void createOutputDirectory(Path output) {
-        try {
-            if (!Files.exists(output)) {
-                Files.createDirectories(output);
-                LOGGER.info("Created output directory: " + output);
-            } else {
-                LOGGER.info("Output directory already exists: " + output);
-            }
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Failed to create output directory: " + output, e);
-            throw new RuntimeException("Output directory creation failed", e);
-        }
     }
 
     /* ========== Lattice Structure Calculation ========== */
 
-    private static LatticeStructure buildLatticeStructure(SimulationParams params) {
-        LatticeStructure ls = new LatticeStructure();
-
-        // Calculate basis vectors (cubic lattice)
-        ls.e = basis(params.lconst, params.lconst, params.lconst, 90.0, 90.0, 90.0);
-
-        // Get lattice type specific configuration
-        LatticeTypeConfig typeConfig = getLatticeTypeConfig(params.latticeType, params.lconst);
-        ls.loc = translatePoints(typeConfig.loc, params.shift);
-        ls.dMin = typeConfig.dMin;
-        ls.dMax = typeConfig.dMax;
-
-        // Set unit cell dimensions
-        ls.nx = params.numCells;
-        ls.ny = params.numCells;
-        ls.nz = params.numCells;
-
-        // Generate lattice points and bonds
-        ls.points = lattice_points(ls.e, ls.loc, ls.nx, ls.ny, ls.nz);
-        ls.lines = select_bonds(ls.points, ls.dMin, ls.dMax);
-
-        // Calculate unit cell size
-        ls.uniSize = new double[3];
-        for (int i = 0; i < 3; i++) {
-            ls.uniSize[i] = ls.e[0][i] * ls.nx + ls.e[1][i] * ls.ny + ls.e[2][i] * ls.nz;
-        }
-
-        return ls;
-    }
-
-    private static LatticeTypeConfig getLatticeTypeConfig(String latticeType, double lconst) {
-        LatticeTypeConfig config = new LatticeTypeConfig();
-
+    private static double[][] getLatticeTypeLocations(String latticeType) {
         if (latticeType.equals("fcc")) {
-            config.loc = new double[][]{% raw %}{{0,0,0}, {0,.5,.5}, {.5,0,.5}, {.5,.5,0}}{% endraw %};
-            config.dMin = 0.7 * lconst;
-            config.dMax = 0.71 * lconst;
+            return new double[][]{% raw %}{{0,0,0}, {0,.5,.5}, {.5,0,.5}, {.5,.5,0}}{% endraw %};
         } else if (latticeType.equals("dia")) {
-            config.loc = new double[][]{
+            return new double[][]{
                 {% raw %}{0,0,0}, {0,.5,.5}, {.5,0,.5}, {.5,.5,0},
                 {0.25,0.25,0.25}, {0.25,0.75,0.75}, {0.75,0.25,0.75}, {0.75,0.75,0.25}{% endraw %}
             };
-            config.dMin = 0.4 * lconst;
-            config.dMax = 0.45 * lconst;
         } else if (latticeType.equals("bcc")) {
-            config.loc = new double[][]{% raw %}{{0,0,0}, {.5,.5,.5}}{% endraw %};
-            config.dMin = 0.8 * lconst;
-            config.dMax = 0.9 * lconst;
+            return new double[][]{% raw %}{{0,0,0}, {.5,.5,.5}}{% endraw %};
         } else if (latticeType.equals("simple")) {
-            config.loc = new double[][]{% raw %}{{0,0,0}}{% endraw %};
-            config.dMin = 0.9 * lconst;
-            config.dMax = 1.1 * lconst;
+            return new double[][]{% raw %}{{0,0,0}}{% endraw %};
         } else {
-            config.loc = new double[][]{% raw %}{{0,0,0}}{% endraw %};
-            config.dMin = {{ d_min }};
-            config.dMax = {{ d_max }};
+            return new double[][]{% raw %}{{0,0,0}}{% endraw %};
         }
-
-        return config;
     }
 
-    private static RotationMatrices calculateRotationMatrices() {
-        RotationMatrices rm = new RotationMatrices();
+    private static double[] getLatticeTypeBondLengths(String latticeType, double lconst) {
+        double[] dMinMax = new double[2];
 
+        if (latticeType.equals("fcc")) {
+            dMinMax[0] = 0.7 * lconst;
+            dMinMax[1] = 0.71 * lconst;
+        } else if (latticeType.equals("dia")) {
+            dMinMax[0] = 0.4 * lconst;
+            dMinMax[1] = 0.45 * lconst;
+        } else if (latticeType.equals("bcc")) {
+            dMinMax[0] = 0.8 * lconst;
+            dMinMax[1] = 0.9 * lconst;
+        } else if (latticeType.equals("simple")) {
+            dMinMax[0] = 0.9 * lconst;
+            dMinMax[1] = 1.1 * lconst;
+        } else {
+            dMinMax[0] = {{ d_min }};
+            dMinMax[1] = {{ d_max }};
+        }
+
+        return dMinMax;
+    }
+
+    private static double[][] calculateRotationMatrix() {
         // Default identity rotation (can be changed to 111 or other orientations)
         double[][] rotate = new double[][]{% raw %}{{1.,0.,0.}, {0.,1.,0.}, {0.,0.,1.}}{% endraw %};
-
-        rm.rotate1 = unit_tensor(rotate);
-        rm.rotate1_ = transpose(rm.rotate1);
-
-        return rm;
+        return unit_tensor(rotate);
     }
 
     /* ========== Model Creation and Configuration ========== */
 
-    private static Model createModel(SimulationParams params) {
-        LOGGER.fine("Creating COMSOL model");
+    private static Model createModel(String file, String path) {
         Model model = ModelUtil.create("Model");
-        model.modelPath(params.path);
-        model.label(params.file + ".mph");
+        model.modelPath(path);
+        model.label(file + ".mph");
         model.component().create(COMPONENT_NAME, true);
-        LOGGER.fine("Model created with component: " + COMPONENT_NAME);
         return model;
     }
 
-    private static void setupModelParameters(Model model, SimulationParams params, LatticeStructure lattice) {
+    private static void setupModelParameters(Model model, double lconst, double rs, double rb, double delta, double[] uniSize) {
         model.param().set("disp", "0");
-        model.param().set("Lx", lattice.uniSize[0] + "[mm]");
-        model.param().set("Ly", lattice.uniSize[1] + "[mm]");
-        model.param().set("Lz", lattice.uniSize[2] + "[mm]");
-        model.param().set("lconst", params.lconst + "[mm]");
-        model.param().set("Rs", params.rs);
-        model.param().set("Rb", params.rb);
+        model.param().set("Lx", uniSize[0] + "[mm]");
+        model.param().set("Ly", uniSize[1] + "[mm]");
+        model.param().set("Lz", uniSize[2] + "[mm]");
+        model.param().set("lconst", lconst + "[mm]");
+        model.param().set("Rs", rs);
+        model.param().set("Rb", rb);
 
         // Strain tensor components (initialized to 1)
         String[] strainParams = {"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"};
         for (String param : strainParams) {
             model.param().set(param, 1);
         }
-        model.param().set("delta", params.delta);
+        model.param().set("delta", delta);
     }
 
     private static void createResultTables(Model model) {
@@ -257,40 +195,48 @@ public class {{ class_name }} {
     /* ========== Geometry Construction ========== */
 
     private static Model buildGeometry(Model model, double[] uniSize, double[][] points, double[][][] lines) {
-        LOGGER.fine("Building geometry with " + points.length + " spheres and " + lines.length + " bonds");
         model.component(COMPONENT_NAME).geom().create(GEOMETRY_NAME, 3);
         model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).lengthUnit("mm");
 
         createSpheres(model, points);
         createBonds(model, points.length, lines);
+        createLatticeUnion(model, points.length, lines.length);
         createUnitCell(model, uniSize);
         createBoundarySelections(model);
 
         model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).run();
-        LOGGER.fine("Geometry construction completed");
         return model;
     }
 
+    private static void createLatticeUnion(Model model, int numSpheres, int numBonds) {
+        // Create union of all spheres and bonds
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(UNION_NAME, "Union");
+
+        // Add all spheres
+        String[] objects = new String[numSpheres + numBonds];
+        for (int i = 0; i < numSpheres; i++) {
+            objects[i] = "sph" + i;
+        }
+
+        // Add all bonds
+        for (int j = 0; j < numBonds; j++) {
+            objects[numSpheres + j] = "swp" + j;
+        }
+
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").set(objects);
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).set("intbnd", false);
+    }
+
     private static void createSpheres(Model model, double[][] points) {
-        LOGGER.fine("Creating " + points.length + " spheres");
         for (int i = 0; i < points.length; i++) {
             String sph = "sph" + i;
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(sph, "Sphere");
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(sph).set("pos", points[i]);
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(sph).set("r", "Rs");
-
-            if (i == 0) {
-                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(UNION_NAME, "Union");
-                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").set(sph);
-            } else {
-                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature().move(UNION_NAME, i + 1);
-                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").add(sph);
-            }
         }
     }
 
     private static void createBonds(Model model, int pointCount, double[][][] lines) {
-        LOGGER.fine("Creating " + lines.length + " bonds");
         for (int j = 0; j < lines.length; j++) {
             double[][] l = lines[j];
             String lll = "lin" + j;
@@ -325,15 +271,10 @@ public class {{ class_name }} {
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("face").set(wp + ".c1", 1);
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("edge").set(lll + "(1)", 1);
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("diredge").set(lll + "(1)", 1);
-
-            // Add to union
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature().move(UNION_NAME, pointCount + 3 + j * 3);
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").add(swp);
         }
     }
 
     private static void createUnitCell(Model model, double[] uniSize) {
-        LOGGER.fine("Creating unit cell with porous structure");
         // Create first block
         model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create("blk0", "Block");
         model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk0").set("pos", new double[]{0., 0., 0.});
@@ -356,7 +297,6 @@ public class {{ class_name }} {
     }
 
     private static void createBoundarySelections(Model model) {
-        LOGGER.fine("Creating boundary selections");
         String[][] boundaries = {
             {"boxsel1", "edgeXn", "xmin", "-eps", "xmax", "eps"},
             {"boxsel2", "edgeXp", "xmin", "Lx-eps", "xmax", "Lx+eps"},
@@ -391,14 +331,12 @@ public class {{ class_name }} {
     /* ========== Probes and Coupling ========== */
 
     private static void setupProbes(Model model) {
-        LOGGER.fine("Setting up " + NUM_PROBES + " domain probes");
         for (int i = 1; i <= NUM_PROBES; i++) {
             model.component(COMPONENT_NAME).probe().create("dom" + i, "Domain");
         }
     }
 
     private static void setupCouplingOperators(Model model) {
-        LOGGER.fine("Setting up coupling operators for periodic boundaries");
         String[][] couplings = {
             {"genext1", "coupleX", GEOMETRY_NAME + "_boxsel1", "X-Lx", "Y", "Z"},
             {"genext2", "coupleY", GEOMETRY_NAME + "_boxsel3", "X", "Y-Ly", "Z"},
@@ -419,7 +357,6 @@ public class {{ class_name }} {
     }
 
     private static void configureProbes(Model model) {
-        LOGGER.fine("Configuring stress component probes");
         String[][] probeConfig = {
             {"dom1", "P11", "-" + PHYSICS_NAME + ".PxX"}, {"dom2", "P21", "-" + PHYSICS_NAME + ".PyX"}, {"dom3", "P31", "-" + PHYSICS_NAME + ".PzX"},
             {"dom4", "P12", "-" + PHYSICS_NAME + ".PxY"}, {"dom5", "P22", "-" + PHYSICS_NAME + ".PyY"}, {"dom6", "P32", "-" + PHYSICS_NAME + ".PzY"},
@@ -439,7 +376,6 @@ public class {{ class_name }} {
     /* ========== Mesh Setup ========== */
 
     private static void setupMesh(Model model) {
-        LOGGER.fine("Setting up mesh with periodic boundary conditions");
         model.component(COMPONENT_NAME).coordSystem("sys1").label("Boundary System 1");
         model.component(COMPONENT_NAME).mesh().create(MESH_NAME);
         model.component(COMPONENT_NAME).mesh(MESH_NAME).autoMeshSize(5);
@@ -453,33 +389,35 @@ public class {{ class_name }} {
             model.component(COMPONENT_NAME).mesh(MESH_NAME).feature(ftriNames[i]).selection().named(boxSelNames[i]);
         }
 
-        // Copy mesh to opposite boundaries
+        // Copy mesh to opposite boundaries with proper mapping
         String[][] copyPairs = {
-            {"cpf1", GEOMETRY_NAME + "_boxsel1", GEOMETRY_NAME + "_boxsel2"},
-            {"cpf2", GEOMETRY_NAME + "_boxsel3", GEOMETRY_NAME + "_boxsel4"},
-            {"cpf3", GEOMETRY_NAME + "_boxsel5", GEOMETRY_NAME + "_boxsel6"}
+            {"cpf1", GEOMETRY_NAME + "_boxsel1", GEOMETRY_NAME + "_boxsel2", "Lx", "0", "0"},  // X direction
+            {"cpf2", GEOMETRY_NAME + "_boxsel3", GEOMETRY_NAME + "_boxsel4", "0", "Ly", "0"},  // Y direction
+            {"cpf3", GEOMETRY_NAME + "_boxsel5", GEOMETRY_NAME + "_boxsel6", "0", "0", "Lz"}   // Z direction
         };
 
         for (String[] pair : copyPairs) {
             model.component(COMPONENT_NAME).mesh(MESH_NAME).create(pair[0], "CopyFace");
             model.component(COMPONENT_NAME).mesh(MESH_NAME).feature(pair[0]).selection("source").named(pair[1]);
             model.component(COMPONENT_NAME).mesh(MESH_NAME).feature(pair[0]).selection("destination").named(pair[2]);
+            // Set the displacement vector for the copy operation
+            model.component(COMPONENT_NAME).mesh(MESH_NAME).feature(pair[0]).set("displx", pair[3]);
+            model.component(COMPONENT_NAME).mesh(MESH_NAME).feature(pair[0]).set("disply", pair[4]);
+            model.component(COMPONENT_NAME).mesh(MESH_NAME).feature(pair[0]).set("displz", pair[5]);
         }
 
         // Tetrahedral volume mesh
         model.component(COMPONENT_NAME).mesh(MESH_NAME).create("ftet1", "FreeTet");
         model.component(COMPONENT_NAME).mesh(MESH_NAME).run();
-        LOGGER.fine("Mesh generation completed");
     }
 
     /* ========== Physics Setup ========== */
 
-    private static void setupPhysics(Model model, SimulationParams params) {
-        LOGGER.fine("Setting up material properties and solid mechanics physics");
+    private static void setupPhysics(Model model, double pratio) {
         // Material properties
         model.component(COMPONENT_NAME).material().create(MATERIAL_NAME, "Common");
         model.component(COMPONENT_NAME).material(MATERIAL_NAME).propertyGroup("def").set("density", "950");
-        model.component(COMPONENT_NAME).material(MATERIAL_NAME).propertyGroup("def").set("poissonsratio", params.pratio + "-eps");
+        model.component(COMPONENT_NAME).material(MATERIAL_NAME).propertyGroup("def").set("poissonsratio", pratio + "-eps");
         model.component(COMPONENT_NAME).material(MATERIAL_NAME).propertyGroup("def").set("youngsmodulus", "10[MPa]");
 
         // Solid mechanics physics
@@ -494,7 +432,6 @@ public class {{ class_name }} {
     }
 
     private static void setupPeriodicBoundaryConditions(Model model) {
-        LOGGER.fine("Applying periodic boundary conditions");
         String[][] periodicBC = {
             {"disp1", GEOMETRY_NAME + "_boxsel2", "periodicX", "coupleX", "E11", "E21", "E31", "X"},
             {"disp2", GEOMETRY_NAME + "_boxsel4", "periodicY", "coupleY", "E12", "E22", "E32", "Y"},
@@ -515,11 +452,10 @@ public class {{ class_name }} {
 
     /* ========== Study and Solver Setup ========== */
 
-    private static void setupStudy(Model model, SimulationParams params, RotationMatrices rotation) {
-        LOGGER.fine("Setting up parametric study with strain tensor sweep");
+    private static void setupStudy(Model model, String[] dstep, double delta, double[][] rotate1, double[][] rotate1_) {
         // Calculate strain parameters
-        double[][] e33_ = rot(rotation.rotate1, rot(new double[][]{% raw %}{{0,0,0},{0,0,0},{0,0,1}}{% endraw %}, rotation.rotate1_));
-        double[][] e31_ = rot(rotation.rotate1, rot(new double[][]{% raw %}{{0,0,0.5},{0,0,0},{0.5,0,0}}{% endraw %}, rotation.rotate1_));
+        double[][] e33_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0},{0,0,0},{0,0,1}}{% endraw %}, rotate1_));
+        double[][] e31_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0.5},{0,0,0},{0.5,0,0}}{% endraw %}, rotate1_));
 
         String[] strainParams = buildStrainParameters(e33_, e31_);
 
@@ -543,7 +479,7 @@ public class {{ class_name }} {
         model.study(STUDY_NAME).feature("stat").set("geometricNonlinearity", true);
         model.study(STUDY_NAME).feature("stat").set("useparam", true);
         model.study(STUDY_NAME).feature("stat").set("pname", new String[]{"disp"});
-        model.study(STUDY_NAME).feature("stat").set("plistarr", params.dstep);
+        model.study(STUDY_NAME).feature("stat").set("plistarr", dstep);
         model.study(STUDY_NAME).feature("stat").set("punit", new String[]{""});
     }
 
@@ -558,8 +494,7 @@ public class {{ class_name }} {
         return params;
     }
 
-    private static void setupSolver(Model model, SimulationParams params) {
-        LOGGER.fine("Configuring stationary solver");
+    private static void setupSolver(Model model, String[] dstep) {
         model.sol().create(SOLUTION_NAME);
         model.sol(SOLUTION_NAME).study(STUDY_NAME);
         model.sol(SOLUTION_NAME).attach(STUDY_NAME);
@@ -575,7 +510,7 @@ public class {{ class_name }} {
         model.sol(SOLUTION_NAME).feature("v1").label("Dependent Variables 1");
         model.sol(SOLUTION_NAME).feature("v1").set("clistctrl", new String[]{"p1"});
         model.sol(SOLUTION_NAME).feature("v1").set("cname", new String[]{"disp"});
-        model.sol(SOLUTION_NAME).feature("v1").set("clist", params.dstep);
+        model.sol(SOLUTION_NAME).feature("v1").set("clist", dstep);
 
         model.sol(SOLUTION_NAME).feature("s1").label("Stationary Solver 1");
         model.sol(SOLUTION_NAME).feature("s1").set("stol", "1e-7");
@@ -591,16 +526,14 @@ public class {{ class_name }} {
         model.sol("sol2").label("Parametric 1");
     }
 
-    private static void setupBatchJob(Model model, RotationMatrices rotation) {
-        LOGGER.fine("Setting up batch job for parametric sweep");
-        double[][] e33_ = rot(rotation.rotate1, rot(new double[][]{% raw %}{{0,0,0},{0,0,0},{0,0,1}}{% endraw %}, rotation.rotate1_));
-        double[][] e31_ = rot(rotation.rotate1, rot(new double[][]{% raw %}{{0,0,0.5},{0,0,0},{0.5,0,0}}{% endraw %}, rotation.rotate1_));
+    private static void setupBatchJob(Model model, double delta, double[][] rotate1, double[][] rotate1_) {
+        double[][] e33_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0},{0,0,0},{0,0,1}}{% endraw %}, rotate1_));
+        double[][] e31_ = rot(rotate1, rot(new double[][]{% raw %}{{0,0,0.5},{0,0,0},{0.5,0,0}}{% endraw %}, rotate1_));
 
         String dd = "*delta";
         String[] strainParams = buildStrainParameters(e33_, e31_);
 
         model.batch().create(BATCH_NAME, "Parametric");
-        model.batch(BATCH_NAME).create("so1", "Solutionseq");
         model.batch(BATCH_NAME).study(STUDY_NAME);
         model.batch(BATCH_NAME).set("control", "param");
         model.batch(BATCH_NAME).set("pname", new String[]{
@@ -609,38 +542,24 @@ public class {{ class_name }} {
         model.batch(BATCH_NAME).set("plistarr", strainParams);
         model.batch(BATCH_NAME).set("punit", new String[]{"", "", "", "", "", "", "", "", ""});
         model.batch(BATCH_NAME).set("err", true);
-        model.batch(BATCH_NAME).feature("so1").set("seq", SOLUTION_NAME);
-        model.batch(BATCH_NAME).feature("so1").set("psol", "sol2");
-
-        String[] paramStrings = new String[9];
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                paramStrings[i * 3 + j] = "\"E33\",\"" + e33_[i][j] + dd + "\",\"E31\",\"" + e31_[i][j] + dd + "\"";
-            }
-        }
-        model.batch(BATCH_NAME).feature("so1").set("param", paramStrings);
         model.batch(BATCH_NAME).attach(STUDY_NAME);
     }
 
     /* ========== Results and Export ========== */
 
-    private static void runBatchAndExportResults(Model model, SimulationParams params) {
-        LOGGER.info("Starting batch job execution");
+    private static void runBatchAndExportResults(Model model, String file, Path output) {
         // Setup result datasets
         setupResultDatasets(model);
 
         // Run batch job
-        LOGGER.info("Running batch solver - this may take a while");
         model.batch(BATCH_NAME).run();
-        LOGGER.info("Batch job completed");
 
         // Configure and evaluate results
         configureNumericalEvaluations(model);
 
         // Export results to files
-        LOGGER.info("Exporting results");
-        exportKirchhoffStress(model, params);
-        exportMaxMisesStress(model, params);
+        exportKirchhoffStress(model, file, output);
+        exportMaxMisesStress(model, file, output);
     }
 
     private static void setupResultDatasets(Model model) {
@@ -705,7 +624,7 @@ public class {{ class_name }} {
         }
     }
 
-    private static void exportKirchhoffStress(Model model, SimulationParams params) {
+    private static void exportKirchhoffStress(Model model, String file, Path output) {
         model.result().numerical().create("pev10", "EvalPoint");
         model.result().numerical("pev10").set("data", "av1");
         model.result().table().create("tbl" + (NUM_TABLES + 1), "Table");
@@ -725,11 +644,11 @@ public class {{ class_name }} {
         model.result().numerical("pev10").setResult();
         model.result().table("tbl" + (NUM_TABLES + 1)).set("storetable", "inmodel");
         model.result().export().create("table1", "tbl" + (NUM_TABLES + 1), "Table");
-        model.result().export("table1").set("filename", params.output + "/" + params.file + "_kirchhoff.txt");
+        model.result().export("table1").set("filename", output + "/" + file + "_kirchhoff.txt");
         model.result().export("table1").run();
     }
 
-    private static void exportMaxMisesStress(Model model, SimulationParams params) {
+    private static void exportMaxMisesStress(Model model, String file, Path output) {
         model.result().table().create("tbl" + (NUM_TABLES + 2), "Table");
         model.result().table("tbl" + (NUM_TABLES + 2)).set("tablebuffersize", 10000000);
 
@@ -745,17 +664,18 @@ public class {{ class_name }} {
 
         model.result().table("tbl" + (NUM_TABLES + 2)).set("storetable", "inmodel");
         model.result().export().create("table2", "tbl" + (NUM_TABLES + 2), "Table");
-        model.result().export("table2").set("filename", params.output + "/" + params.file + "_maxmises.txt");
+        model.result().export("table2").set("filename", output + "/" + file + "_maxmises.txt");
         model.result().export("table2").run();
     }
 
-    private static void setupVisualization(Model model, SimulationParams params) {
+    private static void setupVisualization(Model model, String file, Path output) {
         // Stress visualization
         model.result().create("pg2", "PlotGroup3D");
         model.result("pg2").set("data", "dset2");
         model.result("pg2").create("surf1", "Surface");
         model.result("pg2").feature("surf1").set("expr", "solid.mises");
         model.result("pg2").feature("surf1").create("def", "Deform");
+
         model.result("pg2").label("\u5fdc\u529b (solid)");
         model.result("pg2").set("titletype", "custom");
         model.result("pg2").set("typeintitle", false);
@@ -763,6 +683,11 @@ public class {{ class_name }} {
         model.result("pg2").set("expressionintitle", true);
         model.result("pg2").set("showlegendsmaxmin", true);
         model.result("pg2").feature("surf1").set("unit", "MPa");
+        model.result("pg2").feature("surf1").set("const", new String[][]{
+            {"solid.refpntx", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (x \u5ea7\u6a19)"},
+            {"solid.refpnty", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (y \u5ea7\u6a19)"},
+            {"solid.refpntz", "0", "\u30e2\u30fc\u30e1\u30f3\u30c8\u8a08\u7b97\u306b\u95a2\u3059\u308b\u53c2\u7167\u70b9 (z \u5ea7\u6a19)"}
+        });
         model.result("pg2").feature("surf1").set("colortable", "RainbowLight");
         model.result("pg2").feature("surf1").set("resolution", "normal");
         model.result("pg2").feature("surf1").feature("def").set("scaleactive", true);
@@ -773,14 +698,18 @@ public class {{ class_name }} {
         model.result("pg3").create("tblp1", "Table");
         model.result("pg3").feature("tblp1").set("probetag", "dom1,dom2,dom3,dom4,dom5,dom6,dom7,dom8,dom9");
         model.result("pg3").set("ylog", true);
+        model.result("pg3").set("showmanualgrid", true);
+        model.result("pg3").set("showxspacing", true);
+        model.result("pg3").set("showyspacing", false);
+        model.result("pg3").set("showsecyspacing", false);
+        model.result("pg3").set("showsecyextra", false);
         model.result("pg3").set("window", "window1");
 
         // Export animations
-        exportAnimations(model, params);
+        exportAnimations(model, file, output);
     }
 
-    private static void exportAnimations(Model model, SimulationParams params) {
-        LOGGER.fine("Exporting animations");
+    private static void exportAnimations(Model model, String file, Path output) {
         model.result().export().create("anim1", "Animation");
         model.result().export("anim1").set("plotgroup", "pg2");
         model.result().export("anim1").set("target", "file");
@@ -789,9 +718,8 @@ public class {{ class_name }} {
 
         for (int ani = 1; ani < NUM_TABLES; ani++) {
             model.result().export("anim1").setIndex("singlelooplevel", ani, 1);
-            String gifFile = params.output + "/" + params.file + "_e" + ani + ".gif";
+            String gifFile = output + "/" + file + "_e" + ani + ".gif";
             model.result().export("anim1").set("giffilename", gifFile);
-            LOGGER.fine("Exporting animation: " + gifFile);
             model.result().export("anim1").run();
         }
 
@@ -825,14 +753,10 @@ public class {{ class_name }} {
     private static double[][] lattice_points(double[][] e, double[][] loc, int nx, int ny, int nz) {
         double[][] points = new double[0][3];
 
-        for (int k = 0; k <= nz; k++) {
-            for (int j = 0; j <= ny; j++) {
-                for (int i = 0; i <= nx; i++) {
+        for (int k = 0; k < nz; k++) {
+            for (int j = 0; j < ny; j++) {
+                for (int i = 0; i < nx; i++) {
                     for (double[] l : loc) {
-                        if ((i == nx) && (l[0] > 0)) continue;
-                        if ((j == ny) && (l[1] > 0)) continue;
-                        if ((k == nz) && (l[2] > 0)) continue;
-
                         double[] point = new double[3];
                         for (int m = 0; m < 3; m++) {
                             point[m] = (l[0] + i) * e[0][m] + (l[1] + j) * e[1][m] + (l[2] + k) * e[2][m];
@@ -937,32 +861,5 @@ public class {{ class_name }} {
             }
         }
         return p;
-    }
-
-    /* ========== Data Classes ========== */
-
-    private static class SimulationParams {
-        String file, path, stlfile, latticeType;
-        Path output;
-        double lconst, pratio, delta, rs, rb, shift;
-        String[] dstep;
-        int numCells;
-    }
-
-    private static class LatticeStructure {
-        double[][] e, loc, points;
-        double[][][] lines;
-        double[] uniSize;
-        double dMin, dMax;
-        int nx, ny, nz;
-    }
-
-    private static class LatticeTypeConfig {
-        double[][] loc;
-        double dMin, dMax;
-    }
-
-    private static class RotationMatrices {
-        double[][] rotate1, rotate1_;
     }
 }
