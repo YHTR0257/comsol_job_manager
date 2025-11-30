@@ -1,0 +1,107 @@
+# シンプルな立方格子構造
+# 1つの単位格子に8つの球（頂点）と12本のビーム（辺）
+
+job:
+  name: "Simple Cubic Lattice"
+  description: "Basic cubic lattice with 8 corner spheres and 12 edge beams"
+  scale:
+    length: 1e-3  # 1 mm
+    force: 1e-3   # 1 mN
+  parametric:
+    default:
+      sphere.radius: 0.15
+      beam.thickness: 0.08
+
+geometry:
+  lattice_vector:
+    - [2.0, 0.0, 0.0]
+    - [0.0, 2.0, 0.0]
+    - [0.0, 0.0, 2.0]
+
+  sphere:
+    # 立方体の8つの頂点
+    - id: 1
+      radius: 0.15
+      position: [0.0, 0.0, 0.0]
+    - id: 2
+      radius: 0.15
+      position: [2.0, 0.0, 0.0]
+    - id: 3
+      radius: 0.15
+      position: [0.0, 2.0, 0.0]
+    - id: 4
+      radius: 0.15
+      position: [2.0, 2.0, 0.0]
+    - id: 5
+      radius: 0.15
+      position: [0.0, 0.0, 2.0]
+    - id: 6
+      radius: 0.15
+      position: [2.0, 0.0, 2.0]
+    - id: 7
+      radius: 0.15
+      position: [0.0, 2.0, 2.0]
+    - id: 8
+      radius: 0.15
+      position: [2.0, 2.0, 2.0]
+
+  beam:
+    # 底面の4本
+    - id: 1
+      endpoints: [1, 2]
+      thickness: 0.08
+    - id: 2
+      endpoints: [1, 3]
+      thickness: 0.08
+    - id: 3
+      endpoints: [2, 4]
+      thickness: 0.08
+    - id: 4
+      endpoints: [3, 4]
+      thickness: 0.08
+    # 上面の4本
+    - id: 5
+      endpoints: [5, 6]
+      thickness: 0.08
+    - id: 6
+      endpoints: [5, 7]
+      thickness: 0.08
+    - id: 7
+      endpoints: [6, 8]
+      thickness: 0.08
+    - id: 8
+      endpoints: [7, 8]
+      thickness: 0.08
+    # 縦の4本
+    - id: 9
+      endpoints: [1, 5]
+      thickness: 0.08
+    - id: 10
+      endpoints: [2, 6]
+      thickness: 0.08
+    - id: 11
+      endpoints: [3, 7]
+      thickness: 0.08
+    - id: 12
+      endpoints: [4, 8]
+      thickness: 0.08
+
+mesh:
+  size: 5
+  type: "FreeTri"
+
+materials:
+  material_1:
+    name: "mat1"
+    youngs_modulus: 200e9  # 200 GPa (鋼材相当)
+    poissons_ratio: 0.3
+    density: 960  # kg/m^3
+
+study:
+  parametic_sweep:
+    strain:
+      delta: 0.01
+      range: [0.0, 0.05]
+  boundary_conditions:
+    fixed: true
+    copyface: true
