@@ -78,10 +78,10 @@ Generating jobs...
 
 ```bash
 # 単一ジョブの実行
-python scripts/test_job_executor.py -j jobs/comsol/my_first_lattice/job_001
+python scripts/execute_comsol_job.py -j jobs/comsol/my_first_lattice/job_001
 
 # Run全体（全ジョブ）を実行
-python scripts/test_job_executor.py -j jobs/comsol/my_first_lattice
+python scripts/execute_comsol_job.py -j jobs/comsol/my_first_lattice
 ```
 
 ## 5. 自分のカスタム格子を作成
@@ -194,5 +194,5 @@ Generate 100 jobs? [y/N]:
 python scripts/generate_custom_lattice_job.py --help
 
 # ジョブ実行のヘルプ
-python scripts/test_job_executor.py --help
+python scripts/execute_comsol_job.py --help
 ```

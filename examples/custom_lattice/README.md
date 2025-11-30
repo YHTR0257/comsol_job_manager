@@ -43,10 +43,10 @@ python scripts/generate_custom_lattice_job.py \
 
 ```bash
 # 生成されたジョブディレクトリを指定
-python scripts/test_job_executor.py -j jobs/comsol/simple_cubic_test_01
+python scripts/execute_comsol_job.py -j jobs/comsol/simple_cubic_test_01
 
 # タイムアウトを指定（デフォルト: 3600秒 = 1時間）
-python scripts/test_job_executor.py \
+python scripts/execute_comsol_job.py \
     -j jobs/comsol/simple_cubic_test_01 \
     -t 7200  # 2時間
 ```

@@ -189,7 +189,7 @@ Examples:
     print("Next steps:")
     print(f"  1. Review generated jobs in: {result['run_dir']}")
     print(f"  2. Execute jobs using:")
-    print(f"     python scripts/test_job_executor.py -j {result['run_dir']}")
+    print(f"     python scripts/execute_comsol_job.py -j {result['run_dir']}")
     print()
 
     return 0

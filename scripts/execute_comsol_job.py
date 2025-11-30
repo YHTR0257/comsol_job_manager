@@ -23,7 +23,7 @@ setup_logging({
     }
 })
 
-logger = get_logger("test_job_executor")
+logger = get_logger("execute_comsol_job")
 
 
 def verify_job_structure(job_dir: Path) -> bool:
@@ -283,22 +283,22 @@ def main():
         epilog="""
 Examples:
   # Execute specific job (standard lattice)
-  python scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230
+  python scripts/execute_comsol_job.py -j jobs/comsol/job_20251119_161230
 
   # Execute custom lattice job
-  python scripts/test_job_executor.py -j jobs/comsol/run_20251130_120000/job_001
+  python scripts/execute_comsol_job.py -j jobs/comsol/run_20251130_120000/job_001
 
   # Execute entire custom lattice run (all jobs in run directory)
-  python scripts/test_job_executor.py -j jobs/comsol/run_20251130_120000
+  python scripts/execute_comsol_job.py -j jobs/comsol/run_20251130_120000
 
   # Execute with custom timeout (2 hours)
-  python scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230 -t 7200
+  python scripts/execute_comsol_job.py -j jobs/comsol/job_20251119_161230 -t 7200
 
   # List available jobs
-  python scripts/test_job_executor.py -l
+  python scripts/execute_comsol_job.py -l
 
   # Execute most recent job
-  python scripts/test_job_executor.py --latest
+  python scripts/execute_comsol_job.py --latest
         """
     )
 
