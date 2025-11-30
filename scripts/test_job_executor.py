@@ -35,18 +35,26 @@ def verify_job_structure(job_dir: Path) -> bool:
     Returns:
         True if all required files exist, False otherwise
     """
-    required_files = {
-        'run.bat': job_dir / 'run.bat',
-        'config.yml': job_dir / 'config.yml',
-    }
+    # run.bat is always required
+    if not (job_dir / 'run.bat').exists():
+        logger.error(f"  ✗ Missing: run.bat")
+        return False
+    logger.info(f"  ✓ Found: run.bat")
+
+    # Either config.yml (standard lattice) or metadata.yml (custom lattice) is required
+    has_config = (job_dir / 'config.yml').exists()
+    has_metadata = (job_dir / 'metadata.yml').exists()
+
+    if not (has_config or has_metadata):
+        logger.error(f"  ✗ Missing: config.yml or metadata.yml")
+        return False
+
+    if has_config:
+        logger.info(f"  ✓ Found: config.yml (standard lattice)")
+    if has_metadata:
+        logger.info(f"  ✓ Found: metadata.yml (custom lattice)")
 
     missing_files = []
-    for name, path in required_files.items():
-        if not path.exists():
-            missing_files.append(name)
-            logger.error(f"  ✗ Missing: {name} ({path})")
-        else:
-            logger.info(f"  ✓ Found: {name}")
 
     # Check for Java file (may have different names)
     java_files = list(job_dir.glob("*.java"))
@@ -274,8 +282,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Execute specific job
+  # Execute specific job (standard lattice)
   python scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230
+
+  # Execute custom lattice job
+  python scripts/test_job_executor.py -j jobs/comsol/run_20251130_120000/job_001
+
+  # Execute entire custom lattice run (all jobs in run directory)
+  python scripts/test_job_executor.py -j jobs/comsol/run_20251130_120000
 
   # Execute with custom timeout (2 hours)
   python scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230 -t 7200
@@ -367,14 +381,52 @@ Examples:
         logger.error(f"Job directory does not exist: {job_dir}")
         return 1
 
-    # Execute job
-    success = execute_single_job(
-        job_dir=job_dir,
-        timeout=args.timeout,
-        check_comsol=not args.no_check_comsol
-    )
+    # Check if this is a run directory (contains multiple jobs)
+    # or a single job directory
+    sub_jobs = sorted([d for d in job_dir.glob("job_*") if d.is_dir()])
 
-    return 0 if success else 1
+    if sub_jobs:
+        # This is a run directory with multiple jobs
+        logger.info(f"Detected run directory with {len(sub_jobs)} jobs")
+        logger.info("=" * 60)
+
+        successes = 0
+        failures = 0
+
+        for i, sub_job in enumerate(sub_jobs, 1):
+            logger.info(f"\nExecuting job {i}/{len(sub_jobs)}: {sub_job.name}")
+            success = execute_single_job(
+                job_dir=sub_job,
+                timeout=args.timeout,
+                check_comsol=not args.no_check_comsol
+            )
+
+            if success:
+                successes += 1
+            else:
+                failures += 1
+
+            logger.info("")
+
+        # Summary
+        logger.info("=" * 60)
+        logger.info("Run Summary")
+        logger.info("=" * 60)
+        logger.info(f"Total jobs: {len(sub_jobs)}")
+        logger.info(f"Successful: {successes}")
+        logger.info(f"Failed: {failures}")
+        logger.info("=" * 60)
+
+        return 0 if failures == 0 else 1
+    else:
+        # Single job directory
+        success = execute_single_job(
+            job_dir=job_dir,
+            timeout=args.timeout,
+            check_comsol=not args.no_check_comsol
+        )
+
+        return 0 if success else 1
 
 
 if __name__ == "__main__":
