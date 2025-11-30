@@ -1,0 +1,391 @@
+import com.comsol.model.*;
+import com.comsol.model.util.*;
+import java.lang.Math;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+/**
+ * COMSOL Multiphysics simulation for custom lattice structure.
+ * Generated from custom_lattice template.
+ */
+public class {{ class_name }} {
+
+    // Simulation constants
+    private static final int NUM_TABLES = 3;
+    private static final int NUM_PROBES = 9;
+
+    // Component names
+    private static final String COMPONENT_NAME = "comp1";
+    private static final String GEOMETRY_NAME = "geom1";
+    private static final String PHYSICS_NAME = "solid";
+    private static final String MESH_NAME = "mesh1";
+    private static final String MATERIAL_NAME = "mat1";
+
+    // Study and solver names
+    private static final String STUDY_NAME = "std1";
+    private static final String SOLUTION_NAME = "sol1";
+    private static final String BATCH_NAME = "p1";
+
+    // Selection names
+    private static final String UNION_NAME = "uni1";
+
+    // Precision constants
+    private static final double EPSILON = 1e-10;
+
+    /**
+     * Main simulation entry point.
+     */
+    public static Model run() {
+        // 1. Initialize simulation parameters
+        String file = "{{ file_name }}";
+        String path = "{{ output_path }}";
+        String stlfile = "{{ stl_path }}";
+        Path output = Paths.get(path);
+
+        // Scale factors
+        double lengthScale = {{ scale_length }};  // Length scale in meters
+        double forceScale = {{ scale_force }};    // Force scale in Newtons
+
+        // Material properties
+        double youngsModulus = {{ youngs_modulus }};  // Pa
+        double poissonsRatio = {{ poissons_ratio }};  // dimensionless
+        double density = {{ density }};  // kg/m^3
+
+        // Mesh configuration
+        double meshSize = {{ mesh_size }};
+        String meshType = "{{ mesh_type }}";
+
+        // Strain study parameters
+        double strainDelta = {{ strain_delta }};
+        double strainMin = {{ strain_min }};
+        double strainMax = {{ strain_max }};
+
+        // Lattice vectors (unit cell)
+        double[][] latticeVectors = new double[][]{
+            {%- for vec in lattice_vectors %}
+            { {{ vec[0] }}, {{ vec[1] }}, {{ vec[2] }} }{% if not loop.last %},{% endif %}
+            {%- endfor %}
+        };
+
+        // Sphere definitions
+        int numSpheres = {{ spheres|length }};
+        double[][] spherePositions = new double[][]{
+            {%- for sphere in spheres %}
+            { {{ sphere.position[0] }}, {{ sphere.position[1] }}, {{ sphere.position[2] }} }{% if not loop.last %},{% endif %}
+            {%- endfor %}
+        };
+        double[] sphereRadii = new double[]{
+            {%- for sphere in spheres %}
+            {{ sphere.radius }}{% if not loop.last %}, {% endif %}
+            {%- endfor %}
+        };
+
+        // Beam definitions
+        int numBeams = {{ beams|length }};
+        int[][] beamEndpoints = new int[][]{
+            {%- for beam in beams %}
+            { {{ beam.endpoints[0] - 1 }}, {{ beam.endpoints[1] - 1 }} }{% if not loop.last %},{% endif %}  // Convert to 0-indexed
+            {%- endfor %}
+        };
+        double[] beamThicknesses = new double[]{
+            {%- for beam in beams %}
+            {{ beam.thickness }}{% if not loop.last %}, {% endif %}
+            {%- endfor %}
+        };
+
+        // Calculate unit cell size from lattice vectors
+        double[] unitCellSize = new double[]{
+            Math.sqrt(latticeVectors[0][0]*latticeVectors[0][0] +
+                     latticeVectors[0][1]*latticeVectors[0][1] +
+                     latticeVectors[0][2]*latticeVectors[0][2]),
+            Math.sqrt(latticeVectors[1][0]*latticeVectors[1][0] +
+                     latticeVectors[1][1]*latticeVectors[1][1] +
+                     latticeVectors[1][2]*latticeVectors[1][2]),
+            Math.sqrt(latticeVectors[2][0]*latticeVectors[2][0] +
+                     latticeVectors[2][1]*latticeVectors[2][1] +
+                     latticeVectors[2][2]*latticeVectors[2][2])
+        };
+
+        // 2. Calculate rotation matrix for strain application
+        double[][] rotate1 = calculateRotationMatrix();
+        double[][] rotate1_ = transpose(rotate1);
+
+        // 3. Create COMSOL model
+        Model model = createModel(file, path);
+
+        // 4. Setup model parameters
+        setupModelParameters(model, lengthScale, unitCellSize, strainDelta);
+        createResultTables(model);
+
+        // 5. Build geometry
+        model = buildCustomGeometry(model, spherePositions, sphereRadii,
+                                    beamEndpoints, beamThicknesses,
+                                    unitCellSize, lengthScale);
+
+        // 6. Setup simulation components
+        setupProbes(model);
+        setupCouplingOperators(model);
+        setupMesh(model, meshSize, meshType);
+        setupPhysics(model, youngsModulus, poissonsRatio, density);
+        configureProbes(model);
+
+        // 7. Setup and run study
+        String[] dstep = generateStrainSteps(strainMin, strainMax, strainDelta);
+        setupStudy(model, dstep, strainDelta, rotate1, rotate1_);
+        setupSolver(model, dstep);
+        setupBatchJob(model, strainDelta, rotate1, rotate1_);
+
+        // 8. Execute and export results
+        runBatchAndExportResults(model, file, output);
+        setupVisualization(model, file, output, stlfile);
+
+        return model;
+    }
+
+    /* ========== Model Creation and Configuration ========== */
+
+    private static Model createModel(String file, String path) {
+        Model model = ModelUtil.create("Model");
+        model.modelPath(path);
+        model.label(file + ".mph");
+        model.component().create(COMPONENT_NAME, true);
+        return model;
+    }
+
+    private static void setupModelParameters(Model model, double lengthScale,
+                                            double[] unitCellSize, double delta) {
+        model.param().set("disp", "0");
+        model.param().set("Lx", unitCellSize[0] * lengthScale + "[m]");
+        model.param().set("Ly", unitCellSize[1] * lengthScale + "[m]");
+        model.param().set("Lz", unitCellSize[2] * lengthScale + "[m]");
+        model.param().set("lengthScale", lengthScale + "[m]");
+
+        // Strain tensor components (initialized to 1)
+        String[] strainParams = {"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"};
+        for (String param : strainParams) {
+            model.param().set(param, 1);
+        }
+        model.param().set("delta", delta);
+    }
+
+    private static void createResultTables(Model model) {
+        for (int i = 1; i < NUM_TABLES; i++) {
+            model.result().table().create("tbl" + i, "Table");
+            model.result().table("tbl" + i).label("Maximum mises stress " + i);
+        }
+        model.result().table().create("tbl" + NUM_TABLES, "Table");
+        model.result().table("tbl" + NUM_TABLES).label("Probe Table");
+    }
+
+    /* ========== Custom Geometry Construction ========== */
+
+    private static Model buildCustomGeometry(Model model, double[][] spherePos,
+                                            double[] sphereRad, int[][] beamEnds,
+                                            double[] beamThick, double[] unitSize,
+                                            double scale) {
+        model.component(COMPONENT_NAME).geom().create(GEOMETRY_NAME, 3);
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).lengthUnit("m");
+
+        // Create spheres
+        for (int i = 0; i < spherePos.length; i++) {
+            String sph = "sph" + i;
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(sph, "Sphere");
+            double[] pos = new double[]{
+                spherePos[i][0] * scale,
+                spherePos[i][1] * scale,
+                spherePos[i][2] * scale
+            };
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(sph).set("pos", pos);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(sph).set("r", sphereRad[i] * scale);
+        }
+
+        // Create beams (cylinders)
+        for (int j = 0; j < beamEnds.length; j++) {
+            int idx1 = beamEnds[j][0];
+            int idx2 = beamEnds[j][1];
+            double[] p1 = spherePos[idx1];
+            double[] p2 = spherePos[idx2];
+
+            String lll = "lin" + j;
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(lll, "LineSegment");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("specify1", "coord");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("specify2", "coord");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("coord1", new double[]{
+                p1[0] * scale, p1[1] * scale, p1[2] * scale
+            });
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("coord2", new double[]{
+                p2[0] * scale, p2[1] * scale, p2[2] * scale
+            });
+
+            String swp = "swp" + j;
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(swp, "Sweep");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("edge").set(lll);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("crossfaces", true);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("includefinal", false);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("sweeptype", "circle");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("r", beamThick[j] * scale / 2.0);
+        }
+
+        // Create union of all geometry
+        createLatticeUnion(model, spherePos.length, beamEnds.length);
+
+        // Create unit cell box
+        createUnitCell(model, unitSize, scale);
+
+        // Create boundary selections for periodic conditions
+        createBoundarySelections(model);
+
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).run();
+        return model;
+    }
+
+    private static void createLatticeUnion(Model model, int numSpheres, int numBeams) {
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(UNION_NAME, "Union");
+
+        String[] objects = new String[numSpheres + numBeams];
+        for (int i = 0; i < numSpheres; i++) {
+            objects[i] = "sph" + i;
+        }
+        for (int j = 0; j < numBeams; j++) {
+            objects[numSpheres + j] = "swp" + j;
+        }
+
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").set(objects);
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).set("intbnd", false);
+    }
+
+    private static void createUnitCell(Model model, double[] size, double scale) {
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create("blk1", "Block");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk1").set("size", new double[]{
+            size[0] * scale, size[1] * scale, size[2] * scale
+        });
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk1").set("pos", new double[]{0, 0, 0});
+    }
+
+    private static void createBoundarySelections(Model model) {
+        // This would create boundary selections for periodic boundary conditions
+        // Implementation details depend on specific COMSOL API requirements
+        // Placeholder for now
+    }
+
+    /* ========== Mesh Configuration ========== */
+
+    private static void setupMesh(Model model, double size, String type) {
+        model.component(COMPONENT_NAME).mesh().create(MESH_NAME);
+        model.component(COMPONENT_NAME).mesh(MESH_NAME).autoMeshSize(Math.round(size));
+    }
+
+    /* ========== Physics Setup ========== */
+
+    private static void setupPhysics(Model model, double E, double nu, double rho) {
+        model.component(COMPONENT_NAME).physics().create(PHYSICS_NAME, "SolidMechanics", GEOMETRY_NAME);
+
+        // Create material
+        model.component(COMPONENT_NAME).material().create(MATERIAL_NAME, "Common");
+        model.component(COMPONENT_NAME).material(MATERIAL_NAME).propertyGroup("def")
+            .set("youngsmodulus", String.valueOf(E))
+            .set("poissonsratio", String.valueOf(nu))
+            .set("density", String.valueOf(rho));
+    }
+
+    /* ========== Probes and Coupling Operators ========== */
+
+    private static void setupProbes(Model model) {
+        // Create probe table for results
+        for (int i = 0; i < NUM_PROBES; i++) {
+            model.result().numerical().create("pev" + i, "EvalPoint");
+            model.result().numerical("pev" + i).set("probetag", "none");
+        }
+    }
+
+    private static void setupCouplingOperators(Model model) {
+        // Setup coupling operators for volume averaging
+        model.component(COMPONENT_NAME).cpl().create("intop1", "Integration");
+        model.component(COMPONENT_NAME).cpl("intop1").selection().all();
+    }
+
+    private static void configureProbes(Model model) {
+        // Configure probes for stress and strain measurements
+        // Placeholder - actual implementation depends on requirements
+    }
+
+    /* ========== Study and Solver Setup ========== */
+
+    private static String[] generateStrainSteps(double min, double max, double delta) {
+        int numSteps = (int) Math.round((max - min) / delta) + 1;
+        String[] steps = new String[numSteps];
+        for (int i = 0; i < numSteps; i++) {
+            double value = min + i * delta;
+            steps[i] = String.valueOf(value);
+        }
+        return steps;
+    }
+
+    private static void setupStudy(Model model, String[] dstep, double delta,
+                                   double[][] rotate1, double[][] rotate1_) {
+        model.study().create(STUDY_NAME);
+        model.study(STUDY_NAME).create("stat", "Stationary");
+        // Additional study configuration would go here
+    }
+
+    private static void setupSolver(Model model, String[] dstep) {
+        model.sol().create(SOLUTION_NAME);
+        model.sol(SOLUTION_NAME).study(STUDY_NAME);
+        model.sol(SOLUTION_NAME).create("st1", "StudyStep");
+        model.sol(SOLUTION_NAME).create("v1", "Variables");
+        model.sol(SOLUTION_NAME).create("s1", "Stationary");
+    }
+
+    private static void setupBatchJob(Model model, double delta,
+                                      double[][] rotate1, double[][] rotate1_) {
+        model.batch().create(BATCH_NAME, "Parametric");
+        model.batch(BATCH_NAME).study(STUDY_NAME);
+        // Batch configuration for parametric sweep
+    }
+
+    /* ========== Results Export ========== */
+
+    private static void runBatchAndExportResults(Model model, String file, Path output) {
+        model.batch(BATCH_NAME).run();
+
+        // Export kirchhoff stress data
+        String kirchhoffFile = output.resolve("p0_kirchhoff.txt").toString();
+        // Export logic would go here
+    }
+
+    private static void setupVisualization(Model model, String file, Path output, String stlFile) {
+        // Export STL file
+        model.result().export().create("stl1", "STL");
+        model.result().export("stl1").set("filename", stlFile);
+        model.result().export("stl1").run();
+
+        // Export GIF animation (if configured)
+        // GIF export logic would go here
+    }
+
+    /* ========== Utility Functions ========== */
+
+    private static double[][] calculateRotationMatrix() {
+        // Default identity rotation
+        return new double[][]{% raw %}{{1.,0.,0.}, {0.,1.,0.}, {0.,0.,1.}}{% endraw %};
+    }
+
+    private static double[][] transpose(double[][] matrix) {
+        int rows = matrix.length;
+        int cols = matrix[0].length;
+        double[][] result = new double[cols][rows];
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                result[j][i] = matrix[i][j];
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Main method for standalone execution.
+     */
+    public static void main(String[] args) {
+        run();
+    }
+}
