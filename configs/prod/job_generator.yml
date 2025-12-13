@@ -1,0 +1,42 @@
+# Job Generator Configuration (Production)
+#
+# This configuration defines settings for the COMSOL job generator,
+# including template engine settings and output paths.
+
+# Jinja2 template engine settings
+# Custom delimiters to avoid conflicts with Java/C++ code syntax
+jinja2:
+  block_start_string: '<%'
+  block_end_string: '%>'
+  variable_start_string: '<<'
+  variable_end_string: '>>'
+  comment_start_string: '<#'
+  comment_end_string: '#>'
+  trim_blocks: true
+  lstrip_blocks: true
+  keep_trailing_newline: true
+
+# Template validation settings
+validation:
+  # Jinja2 delimiters for validation (must match jinja2 settings above)
+  jinja2_variable_pattern: "<<\\s*[\\w\\.\\[\\]\"'\\(\\)]+\\s*>>"
+  jinja2_block_pattern: "<%\\s*(for|if|endif|endfor|else|elif)\\s+.*?%>"
+
+  # Java code quality checks
+  max_line_length: 120
+  check_excessive_whitespace: true
+
+  # Strict mode: fail on warnings
+  strict: true  # More strict in production
+
+# Output paths
+output:
+  base_dir: 'jobs/comsol'
+  template_dir: 'templates'
+
+  # Directory structure for generated jobs
+  structure:
+    java_file: '{job_id}.java'
+    batch_file: 'run.bat'
+    config_file: 'job_config.yml'
+    results_dir: 'results'
