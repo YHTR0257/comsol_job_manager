@@ -30,6 +30,8 @@ env/
 .coverage
 coverage.xml
 htmlcov/
+.python-version
+pyproject.toml
 
 # Type checkers / linters
 .mypy_cache/
