@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, Template
 
 from src.config.loader import get_logger
 from src.utils.path_utils import detect_wsl, wsl_to_windows_path
+from src.validators.template_validator import validate_generated_java
 
 _logger = get_logger("services.job_generator")
 
@@ -378,13 +379,9 @@ class JobGenerator:
         first_material = list(custom_job.materials.values())[0]
 
         # Prepare strain study parameters
-        strain_study = custom_job.study.parametric_sweep.get('strain')
-        if strain_study:
-            strain_delta = strain_study.delta
-            strain_min, strain_max = strain_study.range
-        else:
-            strain_delta = 0.01
-            strain_min, strain_max = 0.0, 0.05
+        # Study contains strain delta and range directly
+        strain_delta = custom_job.study.strain_delta
+        strain_min, strain_max = custom_job.study.strain_range
 
         template_vars = {
             'class_name': class_name,
@@ -394,6 +391,8 @@ class JobGenerator:
             # Scale
             'scale_length': custom_job.job.scale.length,
             'scale_force': custom_job.job.scale.force,
+            # Unit cell size
+            'unit_cell_size': custom_job.job.unit_cell_size,
             # Material
             'youngs_modulus': first_material.youngs_modulus,
             'poissons_ratio': first_material.poissons_ratio,
@@ -413,6 +412,18 @@ class JobGenerator:
 
         # Render template
         java_content = template.render(**template_vars)
+
+        # Validate rendered Java code
+        validation_result = validate_generated_java(java_content)
+
+        if not validation_result.is_valid:
+            _logger.error(f"Template validation failed:")
+            _logger.error(validation_result.get_error_summary())
+            raise ValueError(f"Generated Java code has validation errors:\n{validation_result.get_error_summary()}")
+
+        if validation_result.warnings:
+            _logger.warning(f"Template validation warnings:")
+            _logger.warning(validation_result.get_error_summary())
 
         # Write Java file
         java_file_path = job_dir / f"{class_name}.java"

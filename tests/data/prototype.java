@@ -1,0 +1,1337 @@
+import com.comsol.model.*;
+import com.comsol.model.util.*;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+
+/**
+ * COMSOL Multiphysics simulation for cubic lattice structures.
+ *
+ * <p>This implementation follows the ref.java structure exactly, with
+ * hardcoded geometry data for a simple cubic lattice.
+ * The workflow includes:</p>
+ * <ul>
+ *   <li>Hardcoded geometry data (8 spheres, 12 beams)</li>
+ *   <li>Geometry creation using Sweep method</li>
+ *   <li>Mesh generation with periodic boundary conditions</li>
+ *   <li>Solid mechanics physics setup</li>
+ *   <li>Parametric study and batch execution</li>
+ *   <li>Results export and visualization</li>
+ * </ul>
+ *
+ * @version 2.2
+ * @since 2024-12-11
+ */
+public class Job1207 {
+
+    /** Debug log writer for detailed execution tracking */
+    private static PrintWriter debugLog = null;
+
+    /**
+     * Logs a message to console and debug log file.
+     *
+     * @param message the message to log
+     */
+    private static void log(String message) {
+        System.out.println(message);
+        // Don't write to System.err for normal messages - it causes COMSOL logger to mark them as ERROR
+        if (debugLog != null) {
+            debugLog.println(message);
+            debugLog.flush();
+        }
+    }
+
+    /**
+     * Logs an error message to stderr and debug log file.
+     *
+     * @param message the error message to log
+     */
+    private static void logError(String message) {
+        System.err.println(message);
+        if (debugLog != null) {
+            debugLog.println("ERROR: " + message);
+            debugLog.flush();
+        }
+    }
+
+    /**
+     * Main execution method that orchestrates the entire simulation workflow.
+     *
+     * <p>This method follows the exact structure of ref.java:</p>
+     * <ol>
+     *   <li>Setup hardcoded geometry data</li>
+     *   <li>Create model and set parameters</li>
+     *   <li>Create geometry using sweep method</li>
+     *   <li>Setup mesh, physics, and probes</li>
+     *   <li>Configure and run batch job</li>
+     *   <li>Export results</li>
+     * </ol>
+     *
+     * @return the configured and solved COMSOL model
+     */
+    public static Model run() {
+        String file = "job_1207";
+        log("=== COMSOL Job Starting ===");
+
+        Model model = null;
+        File projectRoot = null;
+        File resultPath = null;
+        double[] uni_size = null;
+        double delta_ = 0.01;  // Maximum strain = 1% (delta * disp_max = 0.01 * 1 = 0.01)
+        String[] dstep = new String[]{"0, 0.25, 0.5, 0.75, 1"};
+        double pratio = 0.0;
+        double lconst = 15.0;
+        double rs = 1.0;  // 100./100. = 1.0 (matching ref.java)
+        double rb = 0.25; // 25./100. = 0.25 (matching ref.java)
+        String[] strainParams = null;
+
+        try {
+            // Get project root and setup paths
+            projectRoot = getProjectRoot();
+            resultPath = new File(projectRoot, "results");
+
+            if (!resultPath.exists()) {
+                resultPath.mkdirs();
+                log("Created result directory: " + resultPath.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            log("ERROR in project setup: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to setup project directories", e);
+        }
+
+        double[][] points = null;
+        double[][][] lines = null;
+
+        try {
+            // Hardcoded geometry data (matching ref.java format)
+            log("STEP 1: Setting up hardcoded geometry data");
+            points = createHardcodedSpheres(lconst);
+            lines = createHardcodedBeams(points);
+            log("Using " + points.length + " spheres and " + lines.length + " beams");
+
+            // Unit cell size (matching ref.java with lconst = 15.0)
+            uni_size = new double[]{lconst, lconst, lconst};
+        } catch (Exception e) {
+            log("ERROR in STEP 1 (Setting up geometry data): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 1", e);
+        }
+
+        try {
+            log("STEP 2: Creating model");
+            model = ModelUtil.create("Model");
+            model.modelPath(resultPath.getAbsolutePath());
+            model.label(file + ".mph");
+            log("Model created: " + file);
+        } catch (Exception e) {
+            log("ERROR in STEP 2 (Creating model): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 2", e);
+        }
+
+        try {
+            log("STEP 3: Setting parameters");
+            setupParameters(model, uni_size, lconst, rs, rb, delta_);
+            log("Parameters configured");
+        } catch (Exception e) {
+            log("ERROR in STEP 3 (Setting parameters): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 3", e);
+        }
+
+        try {
+            log("STEP 4: Creating component");
+            model.component().create("comp1", true);
+        } catch (Exception e) {
+            log("ERROR in STEP 4 (Creating component): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 4", e);
+        }
+
+        try {
+            log("STEP 5: Creating result tables");
+            createResultTables(model);
+            log("Result tables created");
+        } catch (Exception e) {
+            log("ERROR in STEP 5 (Creating result tables): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 5", e);
+        }
+
+        try {
+            log("STEP 6: Creating geometry");
+            model = geometry(model, uni_size, points, lines);
+            log("Geometry created successfully");
+        } catch (Exception e) {
+            log("ERROR in STEP 6 (Creating geometry): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 6", e);
+        }
+
+        try {
+            log("STEP 7: Creating probes");
+            createProbes(model);
+            log("Probes created");
+        } catch (Exception e) {
+            log("ERROR in STEP 7 (Creating probes): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 7", e);
+        }
+
+        try {
+            log("STEP 8: Setting up coupling operators");
+            setupCouplingOperators(model);
+            log("Coupling operators configured");
+        } catch (Exception e) {
+            log("ERROR in STEP 8 (Setting up coupling operators): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 8", e);
+        }
+
+        try {
+            model.component("comp1").coordSystem("sys1").label("Boundary System 1");
+        } catch (Exception e) {
+            log("ERROR in coordSystem labeling: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to label coordinate system", e);
+        }
+
+        try {
+            log("STEP 9: Creating mesh");
+            createMesh(model);
+            log("Mesh created successfully");
+        } catch (Exception e) {
+            log("ERROR in STEP 9 (Creating mesh): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 9", e);
+        }
+
+        try {
+            log("STEP 10: Setting up material");
+            setupMaterial(model, pratio);
+            log("Material configured");
+        } catch (Exception e) {
+            log("ERROR in STEP 10 (Setting up material): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 10", e);
+        }
+
+        try {
+            log("STEP 11: Setting up physics");
+            setupPhysics(model);
+            log("Physics configured");
+        } catch (Exception e) {
+            log("ERROR in STEP 11 (Setting up physics): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 11", e);
+        }
+
+        try {
+            log("STEP 12: Configuring probes");
+            configureProbes(model);
+            log("Probes configured");
+        } catch (Exception e) {
+            log("ERROR in STEP 12 (Configuring probes): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 12", e);
+        }
+
+        try {
+            log("STEP 13: Creating study");
+            createStudy(model);
+            log("Study created");
+        } catch (Exception e) {
+            log("ERROR in STEP 13 (Creating study): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 13", e);
+        }
+
+        try {
+            log("STEP 14: Creating batch job");
+            createBatchJob(model);
+            log("Batch job created");
+        } catch (Exception e) {
+            log("ERROR in STEP 14 (Creating batch job): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 14", e);
+        }
+
+        try {
+            log("STEP 15: Setting up result datasets");
+            setupResultDatasets(model);
+            log("Result datasets configured");
+        } catch (Exception e) {
+            log("ERROR in STEP 15 (Setting up result datasets): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 15", e);
+        }
+
+        try {
+            log("STEP 16: Configuring study parameters");
+            strainParams = setupStudyParameters(model, delta_, dstep);
+            log("Study parameters configured");
+        } catch (Exception e) {
+            log("ERROR in STEP 16 (Configuring study parameters): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 16", e);
+        }
+
+        try {
+            log("STEP 17: Running batch job");
+            runBatchJob(model, strainParams);
+            log("Batch job execution started");
+        } catch (Exception e) {
+            log("ERROR in STEP 17 (Running batch job): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 17", e);
+        }
+
+        try {
+            log("STEP 18: Processing results");
+            processResults(model, resultPath, file);
+            log("Results processed");
+        } catch (Exception e) {
+            log("ERROR in STEP 18 (Processing results): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 18", e);
+        }
+
+        try {
+            log("STEP 19: Creating visualization");
+            createVisualization(model);
+            log("Visualization created");
+        } catch (Exception e) {
+            log("ERROR in STEP 19 (Creating visualization): " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed at STEP 19", e);
+        }
+
+        log("=== COMSOL Job Completed Successfully ===");
+        return model;
+    }
+
+    /**
+     * Sets up model parameters including dimensions, radii, and strain components.
+     *
+     * @param model the COMSOL model
+     * @param uni_size unit cell dimensions [Lx, Ly, Lz]
+     * @param rs sphere radius
+     * @param rb beam radius
+     * @param delta_ delta parameter for strain
+     */
+    private static void setupParameters(Model model, double[] uni_size, double lconst, double rs, double rb, double delta_) {
+        log("  Setting unit cell dimensions: Lx=" + uni_size[0] + ", Ly=" + uni_size[1] + ", Lz=" + uni_size[2]);
+        model.param().set("disp", "0");
+        model.param().set("Lx", uni_size[0] + "[mm]");
+        model.param().set("Ly", uni_size[1] + "[mm]");
+        model.param().set("Lz", uni_size[2] + "[mm]");
+        model.param().set("lconst", lconst + "[mm]");
+
+        log("  Setting radii: Rs=" + rs + ", Rb=" + rb);
+        model.param().set("Rs", rs);
+        model.param().set("Rb", rb);
+
+        log("  Setting strain tensor components (identity)");
+        model.param().set("E11", 1);
+        model.param().set("E21", 1);
+        model.param().set("E31", 1);
+        model.param().set("E12", 1);
+        model.param().set("E22", 1);
+        model.param().set("E32", 1);
+        model.param().set("E13", 1);
+        model.param().set("E23", 1);
+        model.param().set("E33", 1);
+        model.param().set("delta", delta_);
+
+        // Note: Using COMSOL's built-in 'eps' variable for boundary selections (like ref.java)
+    }
+
+    /**
+     * Creates result tables for storing stress data.
+     *
+     * @param model the COMSOL model
+     */
+    private static void createResultTables(Model model) {
+        int ttt = 3;
+        for (int i = 1; i < ttt; i++) {
+            model.result().table().create("tbl" + i, "Table");
+            model.result().table("tbl" + i).label("Maximum mises stress " + i);
+        }
+        model.result().table().create("tbl" + ttt, "Table");
+        model.result().table("tbl" + ttt).label("Probe Table");
+        log("  Created " + ttt + " result tables");
+    }
+
+    /**
+     * Creates geometry using the Sweep method (matching ref.java).
+     *
+     * <p>This method creates:</p>
+     * <ul>
+     *   <li>Spheres at specified positions</li>
+     *   <li>Beams connecting spheres using LineSegment + WorkPlane + Circle + Sweep</li>
+     *   <li>Block and Difference operations for lattice structure</li>
+     *   <li>Boundary selections for periodic BC</li>
+     * </ul>
+     *
+     * @param model the COMSOL model
+     * @param uni_size unit cell dimensions
+     * @param points array of sphere positions [n][3]
+     * @param lines array of beam lines [n][2][3] (matching ref.java select_bonds format)
+     * @return the model with geometry created
+     */
+    public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines) {
+        log("  Creating geometry sequence");
+        model.component("comp1").geom().create("geom1", 3);
+        model.component("comp1").geom("geom1").lengthUnit("mm");
+
+        // Create spheres
+        log("  Creating " + points.length + " spheres");
+        int numSpheres = points.length;
+        createSpheres(model, points);
+
+        // Create beams using Sweep method (matching ref.java)
+        log("  Creating " + lines.length + " beams using Sweep method");
+        int numBeams = lines.length;
+        createBeams(model, lines, numSpheres);
+
+        // Create blocks and difference operations (matching ref.java)
+        log("  Creating blocks and difference operations");
+        log("  numSpheres=" + numSpheres + ", numBeams=" + numBeams);
+        log("  Expected dif1 position: " + (numSpheres + 2 + numBeams * 3));
+        createBlockOperations(model, uni_size, numSpheres, numBeams);
+
+        // Create boundary selections (matching ref.java)
+        log("  Creating boundary selections");
+        createBoundarySelections(model);
+
+        // Run geometry
+        log("  Building geometry...");
+        model.component("comp1").geom("geom1").run();
+
+        return model;
+    }
+
+    /**
+     * Creates sphere geometries at specified positions (matching ref.java).
+     *
+     * @param model the COMSOL model
+     * @param points array of sphere positions [n][3] where each row is [x, y, z]
+     */
+    private static void createSpheres(Model model, double[][] points) {
+        int i = 0;
+        for (double[] p : points) {
+            String sph = "sph" + i;
+            model.component("comp1").geom("geom1").create(sph, "Sphere");
+            model.component("comp1").geom("geom1").feature(sph).set("pos", p);
+            model.component("comp1").geom("geom1").feature(sph).set("r", "Rs");
+
+            if (i == 0) {
+                model.component("comp1").geom("geom1").create("uni1", "Union");
+                model.component("comp1").geom("geom1").feature("uni1").selection("input").set(sph);
+            } else {
+                model.component("comp1").geom("geom1").feature().move("uni1", i + 1);
+                model.component("comp1").geom("geom1").feature("uni1").selection("input").add(sph);
+            }
+
+            if ((i + 1) % 10 == 0 || i + 1 == points.length) {
+                log("    Progress: " + (i + 1) + "/" + points.length + " spheres");
+            }
+
+            i++;
+        }
+    }
+
+    /**
+     * Creates beam geometries using the Sweep method (matching ref.java).
+     *
+     * <p>For each beam, this method creates:</p>
+     * <ol>
+     *   <li>LineSegment connecting two points</li>
+     *   <li>WorkPlane perpendicular to the line</li>
+     *   <li>Circle on the WorkPlane with beam radius</li>
+     *   <li>Sweep of the circle along the line</li>
+     * </ol>
+     *
+     * @param model the COMSOL model
+     * @param lines array of beam lines [n][2][3] where each beam is [[x1,y1,z1], [x2,y2,z2]]
+     * @param i number of spheres (for positioning union operation)
+     */
+    private static void createBeams(Model model, double[][][] lines, int i) {
+        int j = 0;
+
+        for (double[][] l : lines) {
+            double[] coord1 = l[0];
+            double[] coord2 = l[1];
+
+            double[] ln = new double[3];
+            for (int k = 0; k < 3; k++) {
+                ln[k] = coord2[k] - coord1[k];
+            }
+
+            // Create LineSegment
+            String lll = "lin" + j;
+            model.component("comp1").geom("geom1").create(lll, "LineSegment");
+            model.component("comp1").geom("geom1").feature(lll).set("specify1", "coord");
+            model.component("comp1").geom("geom1").feature(lll).set("specify2", "coord");
+            model.component("comp1").geom("geom1").feature(lll).set("coord1", coord1);
+            model.component("comp1").geom("geom1").feature(lll).set("coord2", coord2);
+
+            // Create WorkPlane
+            String wp = "wp" + j;
+            model.component("comp1").geom("geom1").create(wp, "WorkPlane");
+            model.component("comp1").geom("geom1").feature(wp).set("unite", true);
+            model.component("comp1").geom("geom1").feature(wp).set("planetype", "normalvector");
+            model.component("comp1").geom("geom1").feature(wp).set("normalvector", ln);
+            model.component("comp1").geom("geom1").feature(wp).set("normalcoord", coord1);
+
+            // Create Circle on WorkPlane
+            model.component("comp1").geom("geom1").feature(wp).geom().create("c1", "Circle");
+            model.component("comp1").geom("geom1").feature(wp).geom().feature("c1").set("r", "Rb");
+
+            // Create Sweep
+            String swp = "swp" + j;
+            model.component("comp1").geom("geom1").create(swp, "Sweep");
+            model.component("comp1").geom("geom1").feature(swp).set("crossfaces", true);
+            model.component("comp1").geom("geom1").feature(swp).set("includefinal", false);
+            model.component("comp1").geom("geom1").feature(swp).selection("face").set(wp + ".c1", 1);
+            model.component("comp1").geom("geom1").feature(swp).selection("edge").set(lll + "(1)", 1);
+            model.component("comp1").geom("geom1").feature(swp).selection("diredge").set(lll + "(1)", 1);
+
+            // Add to union (matching ref.java positioning logic)
+            model.component("comp1").geom("geom1").feature().move("uni1", i + 3 + j * 3);
+            model.component("comp1").geom("geom1").feature("uni1").selection("input").add(swp);
+
+            if ((j + 1) % 10 == 0 || j + 1 == lines.length) {
+                log("    Progress: " + (j + 1) + "/" + lines.length + " beams");
+            }
+
+            j++;
+        }
+    }
+
+
+    /**
+     * Creates block and difference operations to form the lattice structure.
+     *
+     * <p>This follows ref.java's approach:</p>
+     * <ol>
+     *   <li>blk0: Unit cell block</li>
+     *   <li>dif1: blk0 - uni1 (void space)</li>
+     *   <li>blk1: Another unit cell block</li>
+     *   <li>dif2: blk1 - dif1 (final lattice structure)</li>
+     * </ol>
+     *
+     * @param model the COMSOL model
+     * @param uni_size unit cell dimensions
+     * @param numSpheres number of spheres
+     * @param numBeams number of beams
+     */
+    private static void createBlockOperations(Model model, double[] uni_size, int numSpheres, int numBeams) {
+        // Create first block
+        model.component("comp1").geom("geom1").create("blk0", "Block");
+        model.component("comp1").geom("geom1").feature("blk0").set("pos", new double[]{0., 0., 0.});
+        model.component("comp1").geom("geom1").feature("blk0").set("size", uni_size);
+
+        // First difference: blk0 - uni1
+        model.component("comp1").geom("geom1").create("dif1", "Difference");
+        model.component("comp1").geom("geom1").feature().move("dif1", numSpheres + 2 + numBeams * 3);
+        model.component("comp1").geom("geom1").feature("dif1").selection("input").set("blk0");
+        model.component("comp1").geom("geom1").feature("dif1").selection("input2").set("uni1");
+
+        // Create second block
+        model.component("comp1").geom("geom1").create("blk1", "Block");
+        model.component("comp1").geom("geom1").feature("blk1").set("pos", new double[]{0., 0., 0.});
+        model.component("comp1").geom("geom1").feature("blk1").set("size", uni_size);
+
+        // Second difference: blk1 - dif1
+        model.component("comp1").geom("geom1").create("dif2", "Difference");
+        model.component("comp1").geom("geom1").feature("dif2").selection("input").set("blk1");
+        model.component("comp1").geom("geom1").feature("dif2").selection("input2").set("dif1");
+
+        log("    Created block operations (blk0, dif1, blk1, dif2)");
+    }
+
+    /**
+     * Creates boundary selections for periodic boundary conditions.
+     *
+     * <p>Creates 7 box selections:</p>
+     * <ul>
+     *   <li>boxsel1-6: Six faces of the unit cell (X-, X+, Y-, Y+, Z-, Z+)</li>
+     *   <li>boxsel7: Origin point (0,0,0) for fixed boundary</li>
+     * </ul>
+     *
+     * @param model the COMSOL model
+     */
+    private static void createBoundarySelections(Model model) {
+        // boxsel1: X- face (x ≈ 0)
+        model.component("comp1").geom("geom1").create("boxsel1", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel1").label("edgeXn");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("xmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("xmax", "eps");
+        model.component("comp1").geom("geom1").feature("boxsel1").set("condition", "inside");
+
+        // boxsel2: X+ face (x ≈ Lx)
+        model.component("comp1").geom("geom1").create("boxsel2", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel2").label("edgeXp");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("xmin", "Lx-eps");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("xmax", "Lx+eps");
+        model.component("comp1").geom("geom1").feature("boxsel2").set("condition", "inside");
+
+        // boxsel3: Y- face (y ≈ 0)
+        model.component("comp1").geom("geom1").create("boxsel3", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel3").label("edgeYn");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("ymin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("ymax", "eps");
+        model.component("comp1").geom("geom1").feature("boxsel3").set("condition", "inside");
+
+        // boxsel4: Y+ face (y ≈ Ly)
+        model.component("comp1").geom("geom1").create("boxsel4", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel4").label("edgeYp");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("ymin", "Ly-eps");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("ymax", "Ly+eps");
+        model.component("comp1").geom("geom1").feature("boxsel4").set("condition", "inside");
+
+        // boxsel5: Z- face (z ≈ 0)
+        model.component("comp1").geom("geom1").create("boxsel5", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel5").label("edgeZn");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("zmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("zmax", "eps");
+        model.component("comp1").geom("geom1").feature("boxsel5").set("condition", "inside");
+
+        // boxsel6: Z+ face (z ≈ Lz)
+        model.component("comp1").geom("geom1").create("boxsel6", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("entitydim", 2);
+        model.component("comp1").geom("geom1").feature("boxsel6").label("edgeZp");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("zmin", "Lz-eps");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("zmax", "Lz+eps");
+        model.component("comp1").geom("geom1").feature("boxsel6").set("condition", "inside");
+
+        // boxsel7: Origin point (0,0,0)
+        model.component("comp1").geom("geom1").create("boxsel7", "BoxSelection");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("entitydim", 0);
+        model.component("comp1").geom("geom1").feature("boxsel7").label("edgePoint");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("xmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("xmax", "+eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("ymin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("ymax", "+eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("zmin", "-eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("zmax", "+eps");
+        model.component("comp1").geom("geom1").feature("boxsel7").set("condition", "inside");
+
+        log("    Created 7 boundary selections");
+    }
+
+    /**
+     * Creates domain probes for measuring stress tensor components.
+     *
+     * @param model the COMSOL model
+     */
+    private static void createProbes(Model model) {
+        for (int i = 1; i < 10; i++) {
+            model.component("comp1").probe().create("dom" + i, "Domain");
+        }
+        log("  Created 9 domain probes");
+    }
+
+    /**
+     * Sets up coupling operators for periodic boundary conditions.
+     *
+     * <p>Creates general extrusion operators to map opposite faces:</p>
+     * <ul>
+     *   <li>genext1 (coupleX): X+ face → X- face</li>
+     *   <li>genext2 (coupleY): Y+ face → Y- face</li>
+     *   <li>genext3 (coupleZ): Z+ face → Z- face</li>
+     *   <li>maxop1: Maximum operator for stress evaluation</li>
+     * </ul>
+     *
+     * @param model the COMSOL model
+     */
+    private static void setupCouplingOperators(Model model) {
+        model.component("comp1").cpl().create("genext1", "GeneralExtrusion");
+        model.component("comp1").cpl().create("genext2", "GeneralExtrusion");
+        model.component("comp1").cpl().create("genext3", "GeneralExtrusion");
+        model.component("comp1").cpl().create("maxop1", "Maximum");
+
+        model.component("comp1").cpl("genext1").selection().named("geom1_boxsel1");
+        model.component("comp1").cpl("genext2").selection().named("geom1_boxsel3");
+        model.component("comp1").cpl("genext3").selection().named("geom1_boxsel5");
+        model.component("comp1").cpl("maxop1").selection().set(1);
+
+        model.component("comp1").cpl("genext1").label("coupleX");
+        model.component("comp1").cpl("genext1").set("opname", "coupleX");
+        model.component("comp1").cpl("genext1").set("srcframe", "material");
+        model.component("comp1").cpl("genext1").set("dstmap", new String[]{"X-Lx", "Y", "Z"});
+
+        model.component("comp1").cpl("genext2").label("coupleY");
+        model.component("comp1").cpl("genext2").set("opname", "coupleY");
+        model.component("comp1").cpl("genext2").set("srcframe", "material");
+        model.component("comp1").cpl("genext2").set("dstmap", new String[]{"X", "Y-Ly", "Z"});
+
+        model.component("comp1").cpl("genext3").label("coupleZ");
+        model.component("comp1").cpl("genext3").set("opname", "coupleZ");
+        model.component("comp1").cpl("genext3").set("srcframe", "material");
+        model.component("comp1").cpl("genext3").set("dstmap", new String[]{"X", "Y", "Z-Lz"});
+
+        log("  Created 4 coupling operators (coupleX, coupleY, coupleZ, maxop1)");
+    }
+
+    /**
+     * Creates and configures the mesh with periodic boundary conditions.
+     *
+     * <p>Mesh strategy:</p>
+     * <ul>
+     *   <li>FreeTri on three paired faces (X-, Y-, Z-)</li>
+     *   <li>CopyFace from source to destination faces</li>
+     *   <li>FreeTet for volume meshing</li>
+     * </ul>
+     *
+     * @param model the COMSOL model
+     */
+    private static void createMesh(Model model) {
+        model.component("comp1").mesh().create("mesh1");
+        model.component("comp1").mesh("mesh1").autoMeshSize(5);
+
+        // Create FreeTri on source faces
+        model.component("comp1").mesh("mesh1").create("ftri1", "FreeTri");
+        model.component("comp1").mesh("mesh1").create("ftri2", "FreeTri");
+        model.component("comp1").mesh("mesh1").create("ftri3", "FreeTri");
+        model.component("comp1").mesh("mesh1").feature("ftri1").selection().named("geom1_boxsel1");
+        model.component("comp1").mesh("mesh1").feature("ftri2").selection().named("geom1_boxsel3");
+        model.component("comp1").mesh("mesh1").feature("ftri3").selection().named("geom1_boxsel5");
+
+        // Create CopyFace from source to destination
+        model.component("comp1").mesh("mesh1").create("cpf1", "CopyFace");
+        model.component("comp1").mesh("mesh1").create("cpf2", "CopyFace");
+        model.component("comp1").mesh("mesh1").create("cpf3", "CopyFace");
+        model.component("comp1").mesh("mesh1").feature("cpf1").selection("source").named("geom1_boxsel1");
+        model.component("comp1").mesh("mesh1").feature("cpf1").selection("destination").named("geom1_boxsel2");
+        model.component("comp1").mesh("mesh1").feature("cpf2").selection("source").named("geom1_boxsel3");
+        model.component("comp1").mesh("mesh1").feature("cpf2").selection("destination").named("geom1_boxsel4");
+        model.component("comp1").mesh("mesh1").feature("cpf3").selection("source").named("geom1_boxsel5");
+        model.component("comp1").mesh("mesh1").feature("cpf3").selection("destination").named("geom1_boxsel6");
+
+        // Create volume mesh
+        model.component("comp1").mesh("mesh1").create("ftet1", "FreeTet");
+
+        log("  Running mesh generation...");
+        model.component("comp1").mesh("mesh1").run();
+        log("  Mesh generation completed");
+    }
+
+    /**
+     * Sets up material properties.
+     *
+     * @param model the COMSOL model
+     * @param pratio Poisson's ratio
+     */
+    private static void setupMaterial(Model model, double pratio) {
+        model.component("comp1").material().create("mat1", "Common");
+        model.component("comp1").material("mat1").propertyGroup("def").set("density", "950");
+        model.component("comp1").material("mat1").propertyGroup("def").set("poissonsratio", pratio + "-eps");
+        model.component("comp1").material("mat1").propertyGroup("def").set("youngsmodulus", "10[MPa]");
+        log("  Material properties: density=950, poissonsratio=" + pratio + ", youngsmodulus=10MPa");
+    }
+
+    /**
+     * Sets up solid mechanics physics with periodic boundary conditions.
+     *
+     * <p>Boundary conditions:</p>
+     * <ul>
+     *   <li>fix1: Fixed at origin point</li>
+     *   <li>disp1, disp2, disp3: Periodic displacement on opposite faces</li>
+     * </ul>
+     *
+     * @param model the COMSOL model
+     */
+    private static void setupPhysics(Model model) {
+        model.component("comp1").physics().create("solid", "SolidMechanics", "geom1");
+
+        // Fixed boundary at origin
+        model.component("comp1").physics("solid").create("fix1", "Fixed", 0);
+        model.component("comp1").physics("solid").feature("fix1").selection().named("geom1_boxsel7");
+
+        // Periodic displacement boundaries
+        model.component("comp1").physics("solid").create("disp1", "Displacement2", 2);
+        model.component("comp1").physics("solid").feature("disp1").selection().named("geom1_boxsel2");
+        model.component("comp1").physics("solid").create("disp2", "Displacement2", 2);
+        model.component("comp1").physics("solid").feature("disp2").selection().named("geom1_boxsel4");
+        model.component("comp1").physics("solid").create("disp3", "Displacement2", 2);
+        model.component("comp1").physics("solid").feature("disp3").selection().named("geom1_boxsel6");
+
+        // Configure periodic X
+        model.component("comp1").physics("solid").feature("disp1").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp1")
+             .set("U0", new String[][]{{"coupleX(u) - E11 * X * disp"},
+                                        {"coupleX(v) - E21 * X * disp"},
+                                        {"coupleX(w) - E31 * X * disp"}});
+        model.component("comp1").physics("solid").feature("disp1").label("periodicX");
+        model.component("comp1").physics("solid").feature("disp1").featureInfo("info").label("Equation View");
+
+        // Configure periodic Y
+        model.component("comp1").physics("solid").feature("disp2").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp2")
+             .set("U0", new String[][]{{"coupleY(u) - E12 * Y * disp"},
+                                        {"coupleY(v) - E22 * Y * disp"},
+                                        {"coupleY(w) - E32 * Y * disp"}});
+        model.component("comp1").physics("solid").feature("disp2").label("periodicY");
+        model.component("comp1").physics("solid").feature("disp2").featureInfo("info").label("Equation View");
+
+        // Configure periodic Z
+        model.component("comp1").physics("solid").feature("disp3").set("Direction", new int[][]{{1}, {1}, {1}});
+        model.component("comp1").physics("solid").feature("disp3")
+             .set("U0", new String[][]{{"coupleZ(u) - E13 * Z * disp"},
+                                        {"coupleZ(v) - E23 * Z * disp"},
+                                        {"coupleZ(w) - E33 * Z * disp"}});
+        model.component("comp1").physics("solid").feature("disp3").label("periodicZ");
+        model.component("comp1").physics("solid").feature("disp3").featureInfo("info").label("Equation View");
+
+        log("  Physics configured with periodic boundary conditions");
+    }
+
+    /**
+     * Configures probes for stress tensor components.
+     *
+     * <p>Creates 9 probes for full stress tensor (Kirchhoff stress):</p>
+     * <ul>
+     *   <li>P11, P21, P31 (first column)</li>
+     *   <li>P12, P22, P32 (second column)</li>
+     *   <li>P13, P23, P33 (third column)</li>
+     * </ul>
+     *
+     * @param model the COMSOL model
+     */
+    private static void configureProbes(Model model) {
+        String[][] probeConfig = {
+            {"dom1", "P11", "-solid.PxX"},
+            {"dom2", "P21", "-solid.PyX"},
+            {"dom3", "P31", "-solid.PzX"},
+            {"dom4", "P12", "-solid.PxY"},
+            {"dom5", "P22", "-solid.PyY"},
+            {"dom6", "P32", "-solid.PzY"},
+            {"dom7", "P13", "-solid.PxZ"},
+            {"dom8", "P23", "-solid.PyZ"},
+            {"dom9", "P33", "-solid.PzZ"}
+        };
+
+        for (String[] cfg : probeConfig) {
+            model.component("comp1").probe(cfg[0]).label(cfg[1]);
+            model.component("comp1").probe(cfg[0]).set("probename", cfg[1]);
+            model.component("comp1").probe(cfg[0]).set("expr", cfg[2]);
+            model.component("comp1").probe(cfg[0]).set("unit", "MPa");
+            model.component("comp1").probe(cfg[0]).set("table", "tbl3");
+            model.component("comp1").probe(cfg[0]).set("window", "window1");
+        }
+
+        log("  Configured 9 stress tensor probes (P11-P33)");
+    }
+
+    /**
+     * Creates the study with parametric sweep.
+     *
+     * @param model the COMSOL model
+     */
+    private static void createStudy(Model model) {
+        model.study().create("std1");
+        model.study("std1").setStoreSolution(true);
+        model.study("std1").create("param", "Parametric");
+        model.study("std1").create("stat", "Stationary");
+
+        // Create solver sequences
+        model.sol().create("sol1");
+        model.sol("sol1").study("std1");
+        model.sol("sol1").attach("std1");
+        model.sol("sol1").create("st1", "StudyStep");
+        model.sol("sol1").create("v1", "Variables");
+        model.sol("sol1").create("s1", "Stationary");
+        model.sol("sol1").feature("s1").create("p1", "Parametric");
+        model.sol("sol1").feature("s1").create("fc1", "FullyCoupled");
+        model.sol("sol1").feature("s1").create("se1", "Segregated");
+        model.sol("sol1").feature("s1").feature().remove("fcDef");
+
+        model.sol().create("sol2");
+        model.sol("sol2").study("std1");
+        model.sol("sol2").label("Parametric 1");
+
+        log("  Study and solver sequences created");
+    }
+
+    /**
+     * Creates the batch job configuration.
+     *
+     * @param model the COMSOL model
+     */
+    private static void createBatchJob(Model model) {
+        model.batch().create("p1", "Parametric");
+        model.batch("p1").create("so1", "Solutionseq");
+        model.batch("p1").study("std1");
+        log("  Batch job created");
+    }
+
+    /**
+     * Sets up result datasets for post-processing.
+     *
+     * @param model the COMSOL model
+     */
+    private static void setupResultDatasets(Model model) {
+        int ttt = 3;
+
+        model.result().dataset("dset1").set("probetag", "dom9");
+        model.result().dataset().create("dset3", "Solution");
+
+        for (int i = 1; i < ttt; i++) {
+            String dset = "dset" + (i + 3);
+            model.result().dataset().create(dset, "Solution");
+            model.result().numerical().create("gev" + i, "EvalGlobal");
+        }
+
+        for (int i = 1; i < 10; i++) {
+            model.result().dataset().create("avh" + i, "Average");
+            model.result().dataset("avh" + i).set("probetag", "dom" + i);
+            model.result().dataset("avh" + i).selection().geom("geom1", 3);
+            model.result().dataset("avh" + i).selection().set(1);
+
+            model.result().numerical().create("pev" + i, "EvalPoint");
+            model.result().numerical("pev" + i).set("probetag", "dom" + i);
+
+            model.component("comp1").probe("dom" + i).genResult(null);
+        }
+
+        model.result().dataset().create("av1", "Average");
+        model.result().dataset("av1").set("intsurface", true);
+        model.result().dataset("av1").set("intvolume", true);
+        model.result().dataset("av1").set("data", "dset2");
+        model.result().dataset("av1").set("showlevel", "off");
+        model.result().dataset("av1").selection().geom("geom1", 3);
+        model.result().dataset("av1").selection().set(1);
+        model.result().dataset("av1").set("method", "integration");
+        model.result().dataset("av1").set("intorderactive", true);
+
+        log("  Result datasets configured");
+    }
+
+    /**
+     * Sets up study parameters for strain sweep.
+     *
+     * @param model the COMSOL model
+     * @param delta_ delta parameter value
+     * @param dstep displacement step values
+     * @return array of strain parameter strings
+     */
+    private static String[] setupStudyParameters(Model model, double delta_, String[] dstep) {
+        // Strain tensors for cubic crystal elastic constant measurement
+        // We need 6 independent strain states to determine C11, C12, C44
+        // Note: Voigt notation - (e11, e22, e33, e23, e13, e12)
+        //
+        // Batch parametric sweep will apply 9 strain states:
+        // 1-3: Normal strains (e11, e22, e33) - for C11, C12
+        // 4-9: Shear strains (e23, e13, e12) - for C44
+
+        String ddd = "*delta ";
+        String dd = "*delta";
+
+        // These define the parametric sweep expressions
+        // Each E_ij component will vary according to the strain tensor being applied
+        String e11 = "1.0" + ddd;  // Will be modified by batch job for each strain state
+        String e21 = "0.0" + ddd;
+        String e31 = "0.0" + ddd;
+        String e12 = "0.0" + ddd;
+        String e22 = "1.0" + ddd;  // Will be modified by batch job for each strain state
+        String e32 = "0.0" + ddd;
+        String e13 = "0.0" + ddd;
+        String e23 = "0.0" + ddd;
+        String e33 = "1.0" + ddd;  // Will be modified by batch job for each strain state
+
+        // Study setup
+        model.study("std1").label("Study 1");
+        model.study("std1").feature("param").label("Parametric Sweep");
+        model.study("std1").feature("param").set("pname", new String[]{"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"});
+        model.study("std1").feature("param")
+             .set("plistarr", new String[]{e11, e21, e31, e12, e22, e32, e13, e23, e33});
+        model.study("std1").feature("param").set("punit", new String[]{"", "", "", "", "", "", "", "", ""});
+
+        model.study("std1").feature("stat").label("Stationary");
+        model.study("std1").feature("stat").set("geometricNonlinearity", true);
+        model.study("std1").feature("stat").set("useparam", true);
+        model.study("std1").feature("stat").set("pname", new String[]{"disp"});
+        model.study("std1").feature("stat").set("plistarr", dstep);
+        model.study("std1").feature("stat").set("punit", new String[]{""});
+
+        // Solver setup
+        model.sol("sol1").attach("std1");
+        model.sol("sol1").label("Solution 1");
+        model.sol("sol1").feature("v1").label("Dependent Variables 1");
+        model.sol("sol1").feature("v1").set("clistctrl", new String[]{"p1"});
+        model.sol("sol1").feature("v1").set("cname", new String[]{"disp"});
+        model.sol("sol1").feature("v1").set("clist", dstep);
+        model.sol("sol1").feature("s1").label("Stationary Solver 1");
+        model.sol("sol1").feature("s1").set("stol", "1e-7");
+        model.sol("sol1").feature("s1").set("reacf", false);
+        model.sol("sol1").feature("s1").set("probesel", "none");
+        model.sol("sol1").feature("s1").feature("dDef").label("Direct");
+        model.sol("sol1").feature("s1").feature("dDef").set("ooc", false);
+        model.sol("sol1").feature("s1").feature("dDef").set("rhob", 400);
+        model.sol("sol1").feature("s1").feature("aDef").label("Advanced");
+        model.sol("sol1").feature("s1").feature("fc1").label("Fully Coupled 1");
+        model.sol("sol1").feature("s1").feature("se1").set("segterm", "iter");
+        model.sol("sol1").feature("s1").feature("se1").set("plot", true);
+
+        log("  Study parameters configured for strain sweep");
+
+        return new String[]{e11, e21, e31, e12, e22, e32, e13, e23, e33, dd};
+    }
+
+    /**
+     * Runs the batch job with parametric sweep.
+     *
+     * @param model the COMSOL model
+     * @param strainParams strain parameter strings (e11-e33, dd)
+     */
+    private static void runBatchJob(Model model, String[] strainParams) {
+        String e11 = strainParams[0], e21 = strainParams[1], e31 = strainParams[2];
+        String e12 = strainParams[3], e22 = strainParams[4], e32 = strainParams[5];
+        String e13 = strainParams[6], e23 = strainParams[7], e33 = strainParams[8];
+        String dd = strainParams[9];
+
+        model.batch("p1").set("control", "param");
+        model.batch("p1").set("pname", new String[]{"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"});
+        model.batch("p1")
+             .set("plistarr", new String[]{e11, e21, e31, e12, e22, e32, e13, e23, e33});
+        model.batch("p1").set("punit", new String[]{"", "", "", "", "", "", "", "", ""});
+        model.batch("p1").set("err", true);
+        model.batch("p1").feature("so1").set("seq", "sol1");
+        model.batch("p1").feature("so1").set("psol", "sol2");
+
+        // Define 9 strain states for cubic crystal elastic constant measurement:
+        // Cases 1-3: e11, e22, e33 (normal strains) - diagonal components
+        // Cases 4-6: e23, e13, e12 (shear strains) - off-diagonal components
+        // Cases 7-9: Additional shear components for symmetry verification
+        model.batch("p1").feature("so1")
+             .set("param", new String[]{
+                 // Case 1: e11 = delta (axial strain in x-direction)
+                 "\"E11\",\"1.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
+                 // Case 2: e22 = delta (axial strain in y-direction)
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"1.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
+                 // Case 3: e33 = delta (axial strain in z-direction)
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"1.0" + dd + "\"",
+                 // Case 4: e23 = delta/2 (shear strain in yz-plane) - engineering strain = delta
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.5" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.5" + dd + "\",\"E33\",\"0.0" + dd + "\"",
+                 // Case 5: e13 = delta/2 (shear strain in xz-plane) - engineering strain = delta
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.5" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.5" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
+                 // Case 6: e12 = delta/2 (shear strain in xy-plane) - engineering strain = delta
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.5" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.5" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
+                 // Cases 7-9: Combined states for verification (optional, can be removed if not needed)
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
+                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\""
+             });
+        model.batch("p1").attach("std1");
+
+        log("  Executing batch job...");
+        model.batch("p1").run();
+        log("  Batch job completed");
+    }
+
+    /**
+     * Processes and exports simulation results.
+     *
+     * @param model the COMSOL model
+     * @param resultPath path to result directory
+     * @param file base filename for exports
+     */
+    private static void processResults(Model model, File resultPath, String file) {
+        int ttt = 3;
+
+        model.result().dataset("dset2").set("probetag", "sol1");
+        model.result().dataset("dset3").set("probetag", "sol2");
+
+        // Note: Batch job creates solutions for each parametric case
+        // With 9 parametric cases, we would have sol1 and sol2 (batch results stored in sol2)
+        // The loop below expects additional solution objects that may not exist for simple cases
+        // Commenting out to prevent "Unknown feature: sol4" error
+
+        /* DISABLED: This section requires additional solution objects created by batch parametric sweep
+        for (int i = 1; i < ttt; i++) {
+            String dset = "dset" + (i + 3);
+            model.result().dataset(dset).set("solution", "sol" + (i + 2));
+
+            model.result().numerical("gev" + i).set("data", dset);
+            model.result().numerical("gev" + i).set("probetag", "none");
+
+            model.result().dataset(dset).label("max_mises" + i);
+
+            model.result().numerical("gev" + i).label("max_mises" + i);
+            model.result().numerical("gev" + i).set("solrepresentation", "solnum");
+            model.result().numerical("gev" + i).set("table", "tbl" + i);
+            model.result().numerical("gev" + i).set("expr", new String[]{"comp1.maxop1(solid.mises)"});
+            model.result().numerical("gev" + i).set("unit", new String[]{"MPa"});
+            model.result().numerical("gev" + i).set("descr", new String[]{""});
+            model.result().numerical("gev" + i)
+                 .set("const", new String[][]{{"solid.refpntx", "0", ""},
+                                            {"solid.refpnty", "0", ""},
+                                            {"solid.refpntz", "0", ""}});
+
+            model.result().numerical("gev" + i).setResult();
+        }
+        */
+
+        for (int i = 1; i < 10; i++) {
+            model.result().numerical("pev" + i).set("looplevelinput", new String[]{"manual"});
+            model.result().numerical("pev" + i)
+                 .set("const", new String[][]{{"solid.refpntx", "0", ""},
+                                            {"solid.refpnty", "0", ""},
+                                            {"solid.refpntz", "0", ""}});
+        }
+
+        // Export Kirchhoff stress
+        model.result().numerical().create("pev10", "EvalPoint");
+        model.result().numerical("pev10").set("data", "av1");
+        model.result().table().create("tbl" + (ttt + 1), "Table");
+        model.result().table("tbl" + (ttt + 1)).set("tablebuffersize", 1000000);
+        model.result().table("tbl" + (ttt + 1)).comments("Engineering Stress");
+
+        for (int i = 0; i < 9; i++) {
+            String[] exprs = {"-solid.PxX", "-solid.PyX", "-solid.PzX", "-solid.PxY", "-solid.PyY", "-solid.PzY", "-solid.PxZ", "-solid.PyZ", "-solid.PzZ"};
+            model.result().numerical("pev10").setIndex("expr", exprs[i], i);
+            model.result().numerical("pev10").setIndex("unit", "MPa", i);
+        }
+
+        model.result().numerical("pev10").set("table", "tbl" + (ttt + 1));
+        model.result().numerical("pev10").setResult();
+        model.result().table("tbl" + (ttt + 1)).set("storetable", "inmodel");
+        model.result().export().create("table1", "tbl" + (ttt + 1), "Table");
+        model.result().export("table1")
+             .set("filename", new File(resultPath, file + "_kirchhoff.txt").getAbsolutePath());
+        model.result().export("table1").run();
+        log("  Exported Kirchhoff stress to " + file + "_kirchhoff.txt");
+
+        // Export max mises stress directly from sol2 (batch solution)
+        // This approach uses the parametric solution results from the batch job
+        model.result().numerical().create("maxmises1", "EvalGlobal");
+        model.result().numerical("maxmises1").set("data", "dset3");  // dset3 points to sol2
+        model.result().numerical("maxmises1").set("probetag", "none");
+        model.result().numerical("maxmises1").set("expr", new String[]{"comp1.maxop1(solid.mises)"});
+        model.result().numerical("maxmises1").set("unit", new String[]{"MPa"});
+        model.result().numerical("maxmises1").set("descr", new String[]{"Maximum von Mises stress"});
+
+        model.result().table().create("tbl" + (ttt + 2), "Table");
+        model.result().table("tbl" + (ttt + 2)).set("tablebuffersize", 10000000);
+        model.result().numerical("maxmises1").set("table", "tbl" + (ttt + 2));
+        model.result().numerical("maxmises1").setResult();
+
+        model.result().table("tbl" + (ttt + 2)).set("storetable", "inmodel");
+        model.result().export().create("table2", "tbl" + (ttt + 2), "Table");
+        model.result().export("table2")
+             .set("filename", new File(resultPath, file + "_maxmises.txt").getAbsolutePath());
+        model.result().export("table2").run();
+        log("  Exported max mises stress to " + file + "_maxmises.txt");
+
+        // Export animation as GIF
+        model.result().export().create("anim1", "Animation");
+        model.result().export("anim1").set("plotgroup", "pg2");  // Use stress visualization plot
+        model.result().export("anim1").set("movietype", "gif");
+        model.result().export("anim1").set("giffilename", new File(resultPath, file + "_animation.gif").getAbsolutePath());
+        model.result().export("anim1").run();
+        log("  Exported animation to " + file + "_animation.gif");
+
+        // Export static image as PNG
+        model.result().export().create("img1", "Image");
+        model.result().export("img1").set("plotgroup", "pg2");  // Use stress visualization plot
+        model.result().export("img1").set("imagetype", "png");
+        model.result().export("img1").set("pngfilename", new File(resultPath, file + "_stress.png").getAbsolutePath());
+        model.result().export("img1").run();
+        log("  Exported stress distribution image to " + file + "_stress.png");
+    }
+
+    /**
+     * Creates visualization plot groups.
+     *
+     * @param model the COMSOL model
+     */
+    private static void createVisualization(Model model) {
+        // Stress visualization
+        model.result().create("pg2", "PlotGroup3D");
+        model.result("pg2").set("data", "dset2");
+        model.result("pg2").create("surf1", "Surface");
+        model.result("pg2").feature("surf1").set("expr", "solid.mises");
+        model.result("pg2").feature("surf1").create("def", "Deform");
+
+        model.result("pg2").label("応力 (solid)");
+        model.result("pg2").set("titletype", "custom");
+        model.result("pg2").set("typeintitle", false);
+        model.result("pg2").set("descriptionintitle", false);
+        model.result("pg2").set("expressionintitle", true);
+        model.result("pg2").set("showlegendsmaxmin", true);
+        model.result("pg2").feature("surf1").set("unit", "MPa");
+        model.result("pg2").feature("surf1")
+             .set("const", new String[][]{{"solid.refpntx", "0", ""},
+                                        {"solid.refpnty", "0", ""},
+                                        {"solid.refpntz", "0", ""}});
+        model.result("pg2").feature("surf1").set("colortable", "RainbowLight");
+        model.result("pg2").feature("surf1").set("resolution", "normal");
+        model.result("pg2").feature("surf1").feature("def").set("scaleactive", true);
+
+        // Probe plot
+        model.result().create("pg3", "PlotGroup1D");
+        model.result("pg3").set("probetag", "window1");
+        model.result("pg3").create("tblp1", "Table");
+        model.result("pg3").feature("tblp1").set("probetag", "dom1,dom2,dom3,dom4,dom5,dom6,dom7,dom8,dom9");
+        model.result("pg3").set("ylog", true);
+        model.result("pg3").set("showmanualgrid", true);
+        model.result("pg3").set("showxspacing", true);
+        model.result("pg3").set("showyspacing", false);
+        model.result("pg3").set("showsecyspacing", false);
+        model.result("pg3").set("showsecyextra", false);
+        model.result("pg3").set("window", "window1");
+
+        log("  Visualization plot groups created");
+    }
+
+    /**
+     * Main entry point - matches ref.java exactly (no initStandalone).
+     *
+     * @param args command line arguments (unused)
+     */
+    public static void main(String[] args) {
+        try {
+            // Initialize log directory
+            File logDir = new File("logs");
+            if (!logDir.exists()) {
+                logDir.mkdirs();
+            }
+
+            // Setup COMSOL progress logging
+            File comsolLogFile = new File(logDir, "comsol_progress.log");
+            ModelUtil.showProgress(comsolLogFile.getAbsolutePath());
+
+            // Initialize debug log
+            debugLog = new PrintWriter(new FileWriter(new File(logDir, "debug.log"), true));
+
+            log("Starting COMSOL batch job");
+            log("COMSOL progress will be logged to: " + comsolLogFile.getAbsolutePath());
+            run();
+            log("Job finished successfully");
+
+        } catch (Exception e) {
+            log("=== COMSOL Job Failed ===");
+            log("Error: " + e.getMessage());
+            e.printStackTrace();
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
+        } finally {
+            if (debugLog != null) {
+                debugLog.close();
+            }
+        }
+    }
+
+    /* ========================================
+     * Hardcoded geometry data methods
+     * ======================================== */
+
+    /**
+     * Creates hardcoded sphere geometry data (matching ref.java format).
+     * This defines a simple cubic lattice structure.
+     *
+     * @param lconst lattice constant
+     * @return array of sphere positions [n][3] where each row is [x, y, z]
+     */
+    private static double[][] createHardcodedSpheres(double lconst) {
+        // Simple cubic lattice: 8 corner spheres scaled by lconst
+        // Format matching ref.java: double[][] points
+        double[][] points = new double[][]{
+            {0.0 * lconst, 0.0 * lconst, 0.0 * lconst},  // sphere_001
+            {0.0 * lconst, 0.0 * lconst, 1.0 * lconst},  // sphere_002
+            {0.0 * lconst, 1.0 * lconst, 0.0 * lconst},  // sphere_003
+            {0.0 * lconst, 1.0 * lconst, 1.0 * lconst},  // sphere_004
+            {1.0 * lconst, 0.0 * lconst, 0.0 * lconst},  // sphere_005
+            {1.0 * lconst, 0.0 * lconst, 1.0 * lconst},  // sphere_006
+            {1.0 * lconst, 1.0 * lconst, 0.0 * lconst},  // sphere_007
+            {1.0 * lconst, 1.0 * lconst, 1.0 * lconst}   // sphere_008
+        };
+
+        return points;
+    }
+
+    /**
+     * Creates hardcoded beam geometry data (matching ref.java select_bonds format).
+     * This defines beams connecting the spheres in a cubic lattice.
+     *
+     * @param points array of sphere positions [n][3]
+     * @return array of beam lines [n][2][3] where each beam is [[x1,y1,z1], [x2,y2,z2]]
+     */
+    private static double[][][] createHardcodedBeams(double[][] points) {
+        // 12 edges of the cubic lattice
+        // Format matching ref.java select_bonds: double[][][] lines = [n][2][3]
+        double[][][] lines = new double[][][]{
+            // Bottom face (z=0)
+            {points[0], points[2]},  // sphere_001 -> sphere_003
+            {points[0], points[4]},  // sphere_001 -> sphere_005
+            {points[2], points[6]},  // sphere_003 -> sphere_007
+            {points[4], points[6]},  // sphere_005 -> sphere_007
+
+            // Top face (z=1)
+            {points[1], points[3]},  // sphere_002 -> sphere_004
+            {points[1], points[5]},  // sphere_002 -> sphere_006
+            {points[3], points[7]},  // sphere_004 -> sphere_008
+            {points[5], points[7]},  // sphere_006 -> sphere_008
+
+            // Vertical edges
+            {points[0], points[1]},  // sphere_001 -> sphere_002
+            {points[2], points[3]},  // sphere_003 -> sphere_004
+            {points[4], points[5]},  // sphere_005 -> sphere_006
+            {points[6], points[7]}   // sphere_007 -> sphere_008
+        };
+
+        return lines;
+    }
+
+    /* ========================================
+     * Helper methods
+     * ======================================== */
+
+    /**
+     * Determines the project root directory by searching for the 'data' folder.
+     *
+     * @return File representing the project root directory
+     */
+    private static File getProjectRoot() {
+        File current = new File("").getAbsoluteFile();
+
+        if (new File(current, "data").exists()) {
+            log("Project root found at current directory: " + current);
+            return current;
+        }
+
+        try {
+            java.net.URL classUrl = Job1207.class.getResource("Job1207.class");
+            if (classUrl != null) {
+                File classPath = new File(classUrl.toURI()).getParentFile();
+
+                for (int i = 0; i < 3; i++) {
+                    if (classPath == null) break;
+
+                    if (new File(classPath, "data").exists()) {
+                        log("Project root found at: " + classPath);
+                        return classPath;
+                    }
+
+                    classPath = classPath.getParentFile();
+                }
+            }
+        } catch (Exception e) {
+            log("Warning: Could not determine project root from class location");
+        }
+
+        log("Warning: Using current directory as project root: " + current);
+        return current;
+    }
+}

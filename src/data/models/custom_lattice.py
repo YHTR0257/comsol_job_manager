@@ -152,25 +152,6 @@ class Material(BaseModel):
     density: float = Field(..., gt=0)
 
 
-class StrainStudy(BaseModel):
-    """Strain parameters for parametric study.
-
-    Attributes:
-        delta: Strain increment
-        range: [min, max] strain range
-    """
-    delta: float = Field(..., gt=0)
-    range: List[float] = Field(..., min_length=2, max_length=2)
-
-    @field_validator('range')
-    @classmethod
-    def validate_range(cls, v):
-        """Validate range is [min, max] with min < max."""
-        if v[0] >= v[1]:
-            raise ValueError(f"Strain range must be [min, max] with min < max, got {v}")
-        return v
-
-
 class BoundaryConditions(BaseModel):
     """Boundary conditions for the study.
 
@@ -186,11 +167,21 @@ class Study(BaseModel):
     """Study configuration.
 
     Attributes:
-        parametric_sweep: Strain parametric sweep configuration
+        strain_delta: Strain increment for parametric sweep
+        strain_range: [min, max] strain range
         boundary_conditions: Boundary condition settings
     """
-    parametric_sweep: Dict[str, StrainStudy] = Field(alias="parametic_sweep")
+    strain_delta: float = Field(..., gt=0)
+    strain_range: List[float] = Field(..., min_length=2, max_length=2)
     boundary_conditions: BoundaryConditions
+
+    @field_validator('strain_range')
+    @classmethod
+    def validate_strain_range(cls, v):
+        """Validate strain_range is [min, max] with min < max."""
+        if v[0] >= v[1]:
+            raise ValueError(f"Strain range must be [min, max] with min < max, got {v}")
+        return v
 
 
 class ParametricSweep(BaseModel):
@@ -252,11 +243,13 @@ class Job(BaseModel):
         description: Job description
         scale: Scaling factors
         parametric: Parametric study configuration
+        unit_cell_size: Unit cell dimensions [Lx, Ly, Lz] in scaled units
     """
     name: str
     description: str = ""
     scale: Scale
     parametric: Parametric
+    unit_cell_size: List[float] = Field(..., min_length=3, max_length=3)
 
 
 class CustomLatticeJob(BaseModel):

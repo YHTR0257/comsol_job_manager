@@ -35,12 +35,12 @@ public class {{ class_name }} {
     /**
      * Main simulation entry point.
      */
-    public static Model run() {
+    public static Model run() throws Exception {
         // 1. Initialize simulation parameters
         String file = "{{ file_name }}";
         String path = "{{ output_path }}";
         String stlfile = "{{ stl_path }}";
-        Path output = Paths.get(path);
+        Path output = Paths.get(path).toAbsolutePath();
 
         // Scale factors
         double lengthScale = {{ scale_length }};  // Length scale in meters
@@ -62,82 +62,97 @@ public class {{ class_name }} {
 
         // Lattice vectors (unit cell)
         double[][] latticeVectors = new double[][]{
-            {%- for vec in lattice_vectors %}
+            {% for vec in lattice_vectors -%}
             { {{ vec[0] }}, {{ vec[1] }}, {{ vec[2] }} }{% if not loop.last %},{% endif %}
-            {%- endfor %}
+
+            {% endfor -%}
         };
 
         // Sphere definitions
         int numSpheres = {{ spheres|length }};
         double[][] spherePositions = new double[][]{
-            {%- for sphere in spheres %}
+            {% for sphere in spheres -%}
             { {{ sphere.position[0] }}, {{ sphere.position[1] }}, {{ sphere.position[2] }} }{% if not loop.last %},{% endif %}
-            {%- endfor %}
+
+            {% endfor -%}
         };
         double[] sphereRadii = new double[]{
-            {%- for sphere in spheres %}
-            {{ sphere.radius }}{% if not loop.last %}, {% endif %}
-            {%- endfor %}
+            {% for sphere in spheres -%}
+            {{ sphere.radius }}{% if not loop.last %},{% endif %}
+
+            {% endfor -%}
         };
 
         // Beam definitions
         int numBeams = {{ beams|length }};
         int[][] beamEndpoints = new int[][]{
-            {%- for beam in beams %}
+            {% for beam in beams -%}
             { {{ beam.endpoints[0] - 1 }}, {{ beam.endpoints[1] - 1 }} }{% if not loop.last %},{% endif %}  // Convert to 0-indexed
-            {%- endfor %}
+
+            {% endfor -%}
         };
         double[] beamThicknesses = new double[]{
-            {%- for beam in beams %}
-            {{ beam.thickness }}{% if not loop.last %}, {% endif %}
-            {%- endfor %}
+            {% for beam in beams -%}
+            {{ beam.thickness }}{% if not loop.last %},{% endif %}
+
+            {% endfor -%}
         };
 
-        // Calculate unit cell size from lattice vectors
-        double[] unitCellSize = new double[]{
-            Math.sqrt(latticeVectors[0][0]*latticeVectors[0][0] +
-                     latticeVectors[0][1]*latticeVectors[0][1] +
-                     latticeVectors[0][2]*latticeVectors[0][2]),
-            Math.sqrt(latticeVectors[1][0]*latticeVectors[1][0] +
-                     latticeVectors[1][1]*latticeVectors[1][1] +
-                     latticeVectors[1][2]*latticeVectors[1][2]),
-            Math.sqrt(latticeVectors[2][0]*latticeVectors[2][0] +
-                     latticeVectors[2][1]*latticeVectors[2][1] +
-                     latticeVectors[2][2]*latticeVectors[2][2])
-        };
+        // Unit cell size [Lx, Ly, Lz] from configuration
+        double[] unitCellSize = new double[]{ {{ unit_cell_size[0] }}, {{ unit_cell_size[1] }}, {{ unit_cell_size[2] }} };
 
         // 2. Calculate rotation matrix for strain application
         double[][] rotate1 = calculateRotationMatrix();
         double[][] rotate1_ = transpose(rotate1);
 
+        // Enable progress logging to file (relative to working directory)
+        String logFile = "results/simulation.log";
+        ModelUtil.showProgress(logFile);
+        System.out.println("Progress logging enabled: " + logFile);
+
         // 3. Create COMSOL model
+        System.out.println("Step 1: Creating COMSOL model...");
         Model model = createModel(file, path);
 
         // 4. Setup model parameters
+        System.out.println("Step 2: Setting up model parameters...");
         setupModelParameters(model, lengthScale, unitCellSize, strainDelta);
         createResultTables(model);
 
-        // 5. Build geometry
-        model = buildCustomGeometry(model, spherePositions, sphereRadii,
-                                    beamEndpoints, beamThicknesses,
-                                    unitCellSize, lengthScale);
+        try {
+            // 5. Build geometry
+            System.out.println("Step 3: Building custom geometry...");
+            model = buildCustomGeometry(model, spherePositions, sphereRadii,
+                                        beamEndpoints, beamThicknesses,
+                                        unitCellSize, lengthScale);
+            System.out.println("Geometry built successfully");
 
-        // 6. Setup simulation components
-        setupProbes(model);
-        setupCouplingOperators(model);
-        setupMesh(model, meshSize, meshType);
-        setupPhysics(model, youngsModulus, poissonsRatio, density);
-        configureProbes(model);
+            // 6. Setup simulation components
+            System.out.println("Step 4: Setting up simulation components...");
+            setupProbes(model);
+            setupCouplingOperators(model);
+            setupMesh(model, meshSize, meshType);
+            setupPhysics(model, youngsModulus, poissonsRatio, density);
+            configureProbes(model);
 
-        // 7. Setup and run study
-        String[] dstep = generateStrainSteps(strainMin, strainMax, strainDelta);
-        setupStudy(model, dstep, strainDelta, rotate1, rotate1_);
-        setupSolver(model, dstep);
-        setupBatchJob(model, strainDelta, rotate1, rotate1_);
+            // 7. Setup and run study
+            System.out.println("Step 5: Setting up study...");
+            String[] dstep = generateStrainSteps(strainMin, strainMax, strainDelta);
+            setupStudy(model, dstep, strainDelta, rotate1, rotate1_);
+            setupSolver(model, dstep);
+            setupBatchJob(model, strainDelta, rotate1, rotate1_);
 
-        // 8. Execute and export results
-        runBatchAndExportResults(model, file, output);
-        setupVisualization(model, file, output, stlfile);
+            // 8. Execute and export results
+            System.out.println("Step 6: Running batch and exporting results...");
+            runBatchAndExportResults(model, file, output);
+            setupVisualization(model, file, output, stlfile);
+
+            System.out.println("Simulation completed successfully");
+        } catch (Exception e) {
+            System.err.println("ERROR: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
 
         return model;
     }
@@ -159,6 +174,12 @@ public class {{ class_name }} {
         model.param().set("Ly", unitCellSize[1] * lengthScale + "[m]");
         model.param().set("Lz", unitCellSize[2] * lengthScale + "[m]");
         model.param().set("lengthScale", lengthScale + "[m]");
+        model.param().set("epsilon_tol", "1e-6[m]");  // Small value for boundary selections
+
+        // Coupling destination map parameters (for periodic BC)
+        model.param().set("X_Lx", "X-Lx");  // X minus Lx
+        model.param().set("Y_Ly", "Y-Ly");  // Y minus Ly
+        model.param().set("Z_Lz", "Z-Lz");  // Z minus Lz
 
         // Strain tensor components (initialized to 1)
         String[] strainParams = {"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"};
@@ -186,51 +207,80 @@ public class {{ class_name }} {
         model.component(COMPONENT_NAME).geom().create(GEOMETRY_NAME, 3);
         model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).lengthUnit("m");
 
-        // Create spheres
-        for (int i = 0; i < spherePos.length; i++) {
+        int i = 0;
+        // Create spheres and build union incrementally
+        for (double[] p : spherePos) {
             String sph = "sph" + i;
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(sph, "Sphere");
-            double[] pos = new double[]{
-                spherePos[i][0] * scale,
-                spherePos[i][1] * scale,
-                spherePos[i][2] * scale
-            };
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(sph).set("pos", pos);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(sph).set("pos", new double[]{
+                p[0] * scale, p[1] * scale, p[2] * scale
+            });
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(sph).set("r", sphereRad[i] * scale);
+
+            if (i == 0) {
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(UNION_NAME, "Union");
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").set(sph);
+            } else {
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature().move(UNION_NAME, i + 1);
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").add(sph);
+            }
+
+            i++;
         }
 
-        // Create beams (cylinders)
-        for (int j = 0; j < beamEnds.length; j++) {
-            int idx1 = beamEnds[j][0];
-            int idx2 = beamEnds[j][1];
-            double[] p1 = spherePos[idx1];
-            double[] p2 = spherePos[idx2];
+        int j = 0;
+        // Create beams using WorkPlane and Sweep
+        for (int[] beamEnd : beamEnds) {
+            int idx1 = beamEnd[0];
+            int idx2 = beamEnd[1];
+            double[] p1 = new double[]{
+                spherePos[idx1][0] * scale,
+                spherePos[idx1][1] * scale,
+                spherePos[idx1][2] * scale
+            };
+            double[] p2 = new double[]{
+                spherePos[idx2][0] * scale,
+                spherePos[idx2][1] * scale,
+                spherePos[idx2][2] * scale
+            };
 
             String lll = "lin" + j;
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(lll, "LineSegment");
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("specify1", "coord");
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("specify2", "coord");
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("coord1", new double[]{
-                p1[0] * scale, p1[1] * scale, p1[2] * scale
-            });
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("coord2", new double[]{
-                p2[0] * scale, p2[1] * scale, p2[2] * scale
-            });
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("coord1", p1);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(lll).set("coord2", p2);
+
+            double[] ln = new double[3];
+            for (int k = 0; k < 3; k++) {
+                ln[k] = p2[k] - p1[k];
+            }
+
+            String wp = "wp" + j;
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(wp, "WorkPlane");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(wp).set("unite", true);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(wp).set("planetype", "normalvector");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(wp).set("normalvector", ln);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(wp).set("normalcoord", p1);
+
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(wp).geom().create("c1", "Circle");
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(wp).geom().feature("c1").set("r", beamThick[j] * scale / 2.0);
 
             String swp = "swp" + j;
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(swp, "Sweep");
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("edge").set(lll);
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("crossfaces", true);
             model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("includefinal", false);
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("sweeptype", "circle");
-            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).set("r", beamThick[j] * scale / 2.0);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("face").set(wp + ".c1", 1);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("edge").set(lll + "(1)", 1);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(swp).selection("diredge").set(lll + "(1)", 1);
+
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature().move(UNION_NAME, i + 3 + j * 3);
+            model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").add(swp);
+            j++;
         }
 
-        // Create union of all geometry
-        createLatticeUnion(model, spherePos.length, beamEnds.length);
-
         // Create unit cell box
-        createUnitCell(model, unitSize, scale);
+        createUnitCell(model, unitSize, scale, i, j);
 
         // Create boundary selections for periodic conditions
         createBoundarySelections(model);
@@ -239,33 +289,77 @@ public class {{ class_name }} {
         return model;
     }
 
-    private static void createLatticeUnion(Model model, int numSpheres, int numBeams) {
-        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(UNION_NAME, "Union");
+    private static void createUnitCell(Model model, double[] size, double scale, int numSpheres, int numBeams) {
+        System.out.println("Creating unit cell with " + numSpheres + " spheres and " + numBeams + " beams");
 
-        String[] objects = new String[numSpheres + numBeams];
-        for (int i = 0; i < numSpheres; i++) {
-            objects[i] = "sph" + i;
-        }
-        for (int j = 0; j < numBeams; j++) {
-            objects[numSpheres + j] = "swp" + j;
-        }
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create("blk0", "Block");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk0").set("pos", new double[]{0., 0., 0.});
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk0").set("size", new double[]{
+            size[0] * scale, size[1] * scale, size[2] * scale
+        });
 
-        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).selection("input").set(objects);
-        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(UNION_NAME).set("intbnd", false);
-    }
+        // Create difference: blk0 - union (outer box minus lattice)
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create("dif1", "Difference");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature().move("dif1", numSpheres + 2 + numBeams * 3);
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("dif1").selection("input").set("blk0");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("dif1").selection("input2").set(UNION_NAME);
 
-    private static void createUnitCell(Model model, double[] size, double scale) {
+        // Create another block for final lattice structure
         model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create("blk1", "Block");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk1").set("pos", new double[]{0., 0., 0.});
         model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk1").set("size", new double[]{
             size[0] * scale, size[1] * scale, size[2] * scale
         });
-        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("blk1").set("pos", new double[]{0, 0, 0});
+
+        // Create final difference: blk1 - dif1 (box minus the void = lattice only)
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create("dif2", "Difference");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("dif2").selection("input").set("blk1");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("dif2").selection("input2").set("dif1");
+
+        System.out.println("Unit cell created successfully");
     }
 
     private static void createBoundarySelections(Model model) {
-        // This would create boundary selections for periodic boundary conditions
-        // Implementation details depend on specific COMSOL API requirements
-        // Placeholder for now
+        // Box selections for periodic boundary conditions
+        String[] dims = new String[]{"X", "Y", "Z"};
+        String[] dirs = new String[]{"n", "p"};
+        String[] params = new String[]{"Lx", "Ly", "Lz"};
+
+        int boxIdx = 1;
+        for (int i = 0; i < 3; i++) {
+            for (String dir : dirs) {
+                String boxName = "boxsel" + boxIdx;
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create(boxName, "BoxSelection");
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(boxName).set("entitydim", 2);
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(boxName).label("edge" + dims[i] + dir);
+
+                String minKey = dims[i].toLowerCase() + "min";
+                String maxKey = dims[i].toLowerCase() + "max";
+
+                if (dir.equals("n")) {
+                    model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(boxName).set(minKey, "-epsilon_tol");
+                    model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(boxName).set(maxKey, "epsilon_tol");
+                } else {
+                    model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(boxName).set(minKey, params[i] + "-epsilon_tol");
+                    model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(boxName).set(maxKey, params[i] + "+epsilon_tol");
+                }
+
+                model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature(boxName).set("condition", "inside");
+                boxIdx++;
+            }
+        }
+
+        // Edge point selection
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).create("boxsel7", "BoxSelection");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("entitydim", 0);
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").label("edgePoint");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("xmin", "-epsilon_tol");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("xmax", "+epsilon_tol");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("ymin", "-epsilon_tol");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("ymax", "+epsilon_tol");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("zmin", "-epsilon_tol");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("zmax", "+epsilon_tol");
+        model.component(COMPONENT_NAME).geom(GEOMETRY_NAME).feature("boxsel7").set("condition", "inside");
     }
 
     /* ========== Mesh Configuration ========== */
@@ -278,6 +372,7 @@ public class {{ class_name }} {
     /* ========== Physics Setup ========== */
 
     private static void setupPhysics(Model model, double E, double nu, double rho) {
+        // Create solid mechanics physics
         model.component(COMPONENT_NAME).physics().create(PHYSICS_NAME, "SolidMechanics", GEOMETRY_NAME);
 
         // Create material
@@ -286,27 +381,105 @@ public class {{ class_name }} {
             .set("youngsmodulus", String.valueOf(E))
             .set("poissonsratio", String.valueOf(nu))
             .set("density", String.valueOf(rho));
+
+        // Fixed boundary condition (to remove rigid body motion)
+        model.component(COMPONENT_NAME).physics(PHYSICS_NAME).create("fix1", "Fixed", 0);
+        model.component(COMPONENT_NAME).physics(PHYSICS_NAME).feature("fix1").selection().named(GEOMETRY_NAME + "_boxsel7");
+
+        // Periodic displacement boundary conditions
+        setupPeriodicBoundaryConditions(model);
+    }
+
+    private static void setupPeriodicBoundaryConditions(Model model) {
+        // Periodic boundary conditions using manual displacement coupling
+        // Based on the equation: u_dest = couple(u_src) - E_ij * L * disp
+
+        String[][] periodicBC = {
+            {"disp1", GEOMETRY_NAME + "_boxsel2", "periodicX", "coupleX", "E11", "E21", "E31", "X"},
+            {"disp2", GEOMETRY_NAME + "_boxsel4", "periodicY", "coupleY", "E12", "E22", "E32", "Y"},
+            {"disp3", GEOMETRY_NAME + "_boxsel6", "periodicZ", "coupleZ", "E13", "E23", "E33", "Z"}
+        };
+
+        for (String[] bc : periodicBC) {
+            // Create displacement boundary condition
+            model.component(COMPONENT_NAME).physics(PHYSICS_NAME).create(bc[0], "Displacement2", 2);
+            model.component(COMPONENT_NAME).physics(PHYSICS_NAME).feature(bc[0]).selection().named(bc[1]);
+            model.component(COMPONENT_NAME).physics(PHYSICS_NAME).feature(bc[0]).set("Direction", new int[][]{% raw %}{{1}, {1}, {1}}{% endraw %});
+
+            // Set displacement equations: couple(u) - E_ij * Coord * disp
+            model.component(COMPONENT_NAME).physics(PHYSICS_NAME).feature(bc[0])
+                 .set("U0", new String[][]{% raw %}{{  bc[3]+"(u) - "+bc[4]+" * "+bc[7]+" * disp"},
+                                            {bc[3]+"(v) - "+bc[5]+" * "+bc[7]+" * disp"},
+                                            {bc[3]+"(w) - "+bc[6]+" * "+bc[7]+" * disp"}}{% endraw %});
+
+            model.component(COMPONENT_NAME).physics(PHYSICS_NAME).feature(bc[0]).label(bc[2]);
+        }
     }
 
     /* ========== Probes and Coupling Operators ========== */
 
     private static void setupProbes(Model model) {
-        // Create probe table for results
-        for (int i = 0; i < NUM_PROBES; i++) {
-            model.result().numerical().create("pev" + i, "EvalPoint");
-            model.result().numerical("pev" + i).set("probetag", "none");
+        // Create domain probes for stress tensor components
+        for (int i = 1; i <= NUM_PROBES; i++) {
+            model.component(COMPONENT_NAME).probe().create("dom" + i, "Domain");
         }
     }
 
     private static void setupCouplingOperators(Model model) {
-        // Setup coupling operators for volume averaging
+        // Setup coupling operators for periodic boundary conditions
+        // These operators couple opposite faces of the unit cell using GeneralExtrusion
+
+        // coupleX: Maps +X face to -X face
+        model.component(COMPONENT_NAME).cpl().create("genext1", "GeneralExtrusion");
+        model.component(COMPONENT_NAME).cpl("genext1").selection().named(GEOMETRY_NAME + "_boxsel1");
+        model.component(COMPONENT_NAME).cpl("genext1").label("coupleX");
+        model.component(COMPONENT_NAME).cpl("genext1").set("opname", "coupleX");
+        model.component(COMPONENT_NAME).cpl("genext1").set("srcframe", "material");
+        model.component(COMPONENT_NAME).cpl("genext1").set("dstmap", new String[]{"X_Lx", "Y", "Z"});
+
+        // coupleY: Maps +Y face to -Y face
+        model.component(COMPONENT_NAME).cpl().create("genext2", "GeneralExtrusion");
+        model.component(COMPONENT_NAME).cpl("genext2").selection().named(GEOMETRY_NAME + "_boxsel3");
+        model.component(COMPONENT_NAME).cpl("genext2").label("coupleY");
+        model.component(COMPONENT_NAME).cpl("genext2").set("opname", "coupleY");
+        model.component(COMPONENT_NAME).cpl("genext2").set("srcframe", "material");
+        model.component(COMPONENT_NAME).cpl("genext2").set("dstmap", new String[]{"X", "Y_Ly", "Z"});
+
+        // coupleZ: Maps +Z face to -Z face
+        model.component(COMPONENT_NAME).cpl().create("genext3", "GeneralExtrusion");
+        model.component(COMPONENT_NAME).cpl("genext3").selection().named(GEOMETRY_NAME + "_boxsel5");
+        model.component(COMPONENT_NAME).cpl("genext3").label("coupleZ");
+        model.component(COMPONENT_NAME).cpl("genext3").set("opname", "coupleZ");
+        model.component(COMPONENT_NAME).cpl("genext3").set("srcframe", "material");
+        model.component(COMPONENT_NAME).cpl("genext3").set("dstmap", new String[]{"X", "Y", "Z_Lz"});
+
+        // Integration operator for volume averaging
         model.component(COMPONENT_NAME).cpl().create("intop1", "Integration");
         model.component(COMPONENT_NAME).cpl("intop1").selection().all();
     }
 
     private static void configureProbes(Model model) {
-        // Configure probes for stress and strain measurements
-        // Placeholder - actual implementation depends on requirements
+        // Configure probes for stress tensor components (P11, P21, P31, P12, P22, P32, P13, P23, P33)
+        String[][] probeConfig = {
+            {"dom1", "P11", "-" + PHYSICS_NAME + ".PxX"},
+            {"dom2", "P21", "-" + PHYSICS_NAME + ".PyX"},
+            {"dom3", "P31", "-" + PHYSICS_NAME + ".PzX"},
+            {"dom4", "P12", "-" + PHYSICS_NAME + ".PxY"},
+            {"dom5", "P22", "-" + PHYSICS_NAME + ".PyY"},
+            {"dom6", "P32", "-" + PHYSICS_NAME + ".PzY"},
+            {"dom7", "P13", "-" + PHYSICS_NAME + ".PxZ"},
+            {"dom8", "P23", "-" + PHYSICS_NAME + ".PyZ"},
+            {"dom9", "P33", "-" + PHYSICS_NAME + ".PzZ"}
+        };
+
+        for (String[] cfg : probeConfig) {
+            model.component(COMPONENT_NAME).probe(cfg[0]).label(cfg[1]);
+            model.component(COMPONENT_NAME).probe(cfg[0]).set("probename", cfg[1]);
+            model.component(COMPONENT_NAME).probe(cfg[0]).set("expr", cfg[2]);
+            model.component(COMPONENT_NAME).probe(cfg[0]).set("unit", "MPa");
+            model.component(COMPONENT_NAME).probe(cfg[0]).set("table", "tbl" + NUM_TABLES);
+            model.component(COMPONENT_NAME).probe(cfg[0]).set("window", "window1");
+        }
     }
 
     /* ========== Study and Solver Setup ========== */
@@ -323,44 +496,144 @@ public class {{ class_name }} {
 
     private static void setupStudy(Model model, String[] dstep, double delta,
                                    double[][] rotate1, double[][] rotate1_) {
+        // Create study
         model.study().create(STUDY_NAME);
+        model.study(STUDY_NAME).setStoreSolution(true);
+        model.study(STUDY_NAME).create("param", "Parametric");
         model.study(STUDY_NAME).create("stat", "Stationary");
-        // Additional study configuration would go here
+        model.study(STUDY_NAME).label("Study 1");
+
+        // Note: For custom lattice, we use a simplified approach without strain tensor sweep
+        // Only sweep the displacement parameter
+        model.study(STUDY_NAME).feature("param").label("Displacement Sweep");
+        model.study(STUDY_NAME).feature("param").set("pname", new String[]{"disp"});
+        model.study(STUDY_NAME).feature("param").set("plistarr", dstep);
+        model.study(STUDY_NAME).feature("param").set("punit", new String[]{""});
+
+        // Stationary study with geometric nonlinearity
+        model.study(STUDY_NAME).feature("stat").label("Stationary");
+        model.study(STUDY_NAME).feature("stat").set("geometricNonlinearity", true);
     }
 
     private static void setupSolver(Model model, String[] dstep) {
+        // Create solver
         model.sol().create(SOLUTION_NAME);
         model.sol(SOLUTION_NAME).study(STUDY_NAME);
+        model.sol(SOLUTION_NAME).attach(STUDY_NAME);
+
+        // Create solver features
         model.sol(SOLUTION_NAME).create("st1", "StudyStep");
         model.sol(SOLUTION_NAME).create("v1", "Variables");
         model.sol(SOLUTION_NAME).create("s1", "Stationary");
+
+        // Configure parametric solver
+        model.sol(SOLUTION_NAME).feature("s1").create("p1", "Parametric");
+        model.sol(SOLUTION_NAME).feature("s1").create("fc1", "FullyCoupled");
+
+        // Set solver parameters
+        model.sol(SOLUTION_NAME).feature("s1").label("Stationary Solver 1");
+        model.sol(SOLUTION_NAME).feature("s1").set("stol", "1e-7");
+
+        // Parametric solver configuration
+        model.sol(SOLUTION_NAME).feature("s1").feature("p1").set("pname", new String[]{"disp"});
+        model.sol(SOLUTION_NAME).feature("s1").feature("p1").set("plistarr", dstep);
+        model.sol(SOLUTION_NAME).feature("s1").feature("p1").set("punit", new String[]{""});
+        model.sol(SOLUTION_NAME).feature("s1").feature("p1").set("probesel", "none");
     }
 
     private static void setupBatchJob(Model model, double delta,
                                       double[][] rotate1, double[][] rotate1_) {
-        model.batch().create(BATCH_NAME, "Parametric");
-        model.batch(BATCH_NAME).study(STUDY_NAME);
-        // Batch configuration for parametric sweep
+        // For custom lattice, we don't use batch parametric sweep
+        // Instead, we'll run the study directly
+        // This simplifies the workflow and avoids the "Unknown feature" error
     }
 
     /* ========== Results Export ========== */
 
     private static void runBatchAndExportResults(Model model, String file, Path output) {
-        model.batch(BATCH_NAME).run();
+        // Run study directly instead of using batch
+        model.study(STUDY_NAME).run();
 
-        // Export kirchhoff stress data
-        String kirchhoffFile = output.resolve("p0_kirchhoff.txt").toString();
-        // Export logic would go here
+        // Export stress tensor data (Kirchhoff stress)
+        exportKirchhoffStress(model, file, output);
+
+        // Export maximum mises stress data
+        exportMaxMisesStress(model, file, output);
+    }
+
+    private static void exportKirchhoffStress(Model model, String file, Path output) {
+        // Create evaluation for stress tensor components
+        model.result().numerical().create("pev10", "EvalPoint");
+        model.result().numerical("pev10").set("data", "dset1");
+
+        // Create table for Kirchhoff stress
+        model.result().table().create("tbl" + (NUM_TABLES + 1), "Table");
+        model.result().table("tbl" + (NUM_TABLES + 1)).set("tablebuffersize", 1000000);
+        model.result().table("tbl" + (NUM_TABLES + 1)).comments("Engineering Stress (Kirchhoff)");
+
+        // Define stress tensor components to export
+        String[] stressComponents = {
+            "-" + PHYSICS_NAME + ".PxX", "-" + PHYSICS_NAME + ".PyX", "-" + PHYSICS_NAME + ".PzX",
+            "-" + PHYSICS_NAME + ".PxY", "-" + PHYSICS_NAME + ".PyY", "-" + PHYSICS_NAME + ".PzY",
+            "-" + PHYSICS_NAME + ".PxZ", "-" + PHYSICS_NAME + ".PyZ", "-" + PHYSICS_NAME + ".PzZ"
+        };
+
+        for (int i = 0; i < stressComponents.length; i++) {
+            model.result().numerical("pev10").setIndex("expr", stressComponents[i], i);
+            model.result().numerical("pev10").setIndex("unit", "MPa", i);
+        }
+
+        model.result().numerical("pev10").set("table", "tbl" + (NUM_TABLES + 1));
+        model.result().numerical("pev10").setResult();
+        model.result().table("tbl" + (NUM_TABLES + 1)).set("storetable", "inmodel");
+
+        // Export to file
+        model.result().export().create("table1", "tbl" + (NUM_TABLES + 1), "Table");
+        model.result().export("table1").set("filename", output.toString() + "/" + file + "_kirchhoff.txt");
+        model.result().export("table1").run();
+
+        System.out.println("Kirchhoff stress data exported successfully");
+    }
+
+    private static void exportMaxMisesStress(Model model, String file, Path output) {
+        // Create table for maximum mises stress
+        model.result().table().create("tbl" + (NUM_TABLES + 2), "Table");
+        model.result().table("tbl" + (NUM_TABLES + 2)).set("tablebuffersize", 10000000);
+
+        // Evaluate maximum mises stress for each strain step
+        for (int i = 1; i < NUM_TABLES; i++) {
+            model.result().numerical("pev" + (i - 1)).set("table", "tbl" + (NUM_TABLES + 2));
+            if (i == 1) {
+                model.result().numerical("pev" + (i - 1)).setResult();
+            } else {
+                model.result().numerical("pev" + (i - 1)).appendResult();
+            }
+            model.result().table("tbl" + (NUM_TABLES + 2)).setIndex("headers", "max_mises" + i, i, 1);
+        }
+
+        model.result().table("tbl" + (NUM_TABLES + 2)).set("storetable", "inmodel");
+
+        // Export to file
+        model.result().export().create("table2", "tbl" + (NUM_TABLES + 2), "Table");
+        model.result().export("table2").set("filename", output.toString() + "/" + file + "_maxmises.txt");
+        model.result().export("table2").run();
+
+        System.out.println("Maximum mises stress data exported successfully");
     }
 
     private static void setupVisualization(Model model, String file, Path output, String stlFile) {
-        // Export STL file
-        model.result().export().create("stl1", "STL");
-        model.result().export("stl1").set("filename", stlFile);
-        model.result().export("stl1").run();
+        // Create basic visualization plot groups
+        // This will be populated with actual plots in future iterations
 
-        // Export GIF animation (if configured)
-        // GIF export logic would go here
+        // TODO: Add stress visualization
+        // model.result().create("pg1", "PlotGroup3D");
+        // model.result("pg1").create("surf1", "Surface");
+        // model.result("pg1").feature("surf1").set("expr", "solid.mises");
+
+        // TODO: Export STL if needed (requires geometry export, not result export)
+        // STL export would be done from geometry/mesh, not from results
+
+        System.out.println("Visualization setup completed (placeholder)");
     }
 
     /* ========== Utility Functions ========== */
@@ -386,6 +659,17 @@ public class {{ class_name }} {
      * Main method for standalone execution.
      */
     public static void main(String[] args) {
-        run();
+        try {
+            System.out.println("=== Starting COMSOL Simulation ===");
+            run();
+            System.out.println("=== Simulation Completed Successfully ===");
+        } catch (Exception e) {
+            System.err.println("=== FATAL ERROR ===");
+            System.err.println("Exception: " + e.getClass().getName());
+            System.err.println("Message: " + e.getMessage());
+            System.err.println("Stack trace:");
+            e.printStackTrace(System.err);
+            System.exit(1);
+        }
     }
 }

@@ -254,25 +254,34 @@ def execute_single_job(job_dir: Path, timeout: int = 3600,
 
 
 def list_available_jobs(base_dir: Path) -> list[Path]:
-    """List all available job directories.
+    """List all available job directories and run directories.
 
     Args:
         base_dir: Base directory containing job folders
 
     Returns:
-        List of job directory paths
+        List of job directory paths and run directory paths
     """
     if not base_dir.exists():
         logger.warning(f"Base directory does not exist: {base_dir}")
         return []
 
-    # Find all job_* directories
+    # Find all job_* and run_* directories
     job_dirs = sorted(
         [d for d in base_dir.glob("job_*") if d.is_dir()],
         reverse=True  # Most recent first
     )
 
-    return job_dirs
+    run_dirs = sorted(
+        [d for d in base_dir.glob("run_*") if d.is_dir()],
+        reverse=True  # Most recent first
+    )
+
+    # Combine and sort by modification time (most recent first)
+    all_dirs = job_dirs + run_dirs
+    all_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    return all_dirs
 
 
 def main():
@@ -348,12 +357,21 @@ Examples:
             return 0
 
         for i, job_dir in enumerate(job_dirs, 1):
-            # Check if job has been executed
-            results_dir = job_dir / "results"
-            has_results = results_dir.exists() and any(results_dir.iterdir())
+            # Check if this is a run directory with multiple jobs
+            sub_jobs = sorted([d for d in job_dir.glob("job_*") if d.is_dir()])
 
-            status = "✓ (executed)" if has_results else "○ (not executed)"
-            logger.info(f"{i:2d}. {job_dir.name:30s} {status}")
+            if sub_jobs:
+                # This is a run directory
+                executed = sum(1 for sj in sub_jobs
+                              if (sj / "results").exists() and any((sj / "results").iterdir()))
+                status = f"RUN ({executed}/{len(sub_jobs)} executed)"
+                logger.info(f"{i:2d}. {job_dir.name:30s} {status}")
+            else:
+                # Single job directory
+                results_dir = job_dir / "results"
+                has_results = results_dir.exists() and any(results_dir.iterdir())
+                status = "✓ (executed)" if has_results else "○ (not executed)"
+                logger.info(f"{i:2d}. {job_dir.name:30s} {status}")
 
         logger.info("=" * 60)
         logger.info(f"Total: {len(job_dirs)} jobs")

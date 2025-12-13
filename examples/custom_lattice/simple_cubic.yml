@@ -1,89 +1,111 @@
 # シンプルな立方格子構造
 # 1つの単位格子に8つの球（頂点）と12本のビーム（辺）
+#
+# 単位セルサイズ: 2.0 x 2.0 x 2.0 (scaled units)
+# スケール係数: 1 mm (実際のサイズは 2.0 mm x 2.0 mm x 2.0 mm)
 
 job:
   name: "Simple Cubic Lattice"
   description: "Basic cubic lattice with 8 corner spheres and 12 edge beams"
   scale:
-    length: 1e-3  # 1 mm
-    force: 1e-3   # 1 mN
+    length: 1e-3  # 1 mm - length scale factor
+    force: 1e-3   # 1 mN - force scale factor
+
+  # Unit cell dimensions [Lx, Ly, Lz] in scaled units
+  # These values are used for periodic boundary conditions (PBC)
+  # Actual dimensions = unit_cell_size * length_scale
+  unit_cell_size: [2.0, 2.0, 2.0]
+
   parametric:
     default:
       sphere.radius: 0.15
       beam.thickness: 0.08
 
 geometry:
+  # Lattice vectors define the periodicity (currently matches unit_cell_size)
   lattice_vector:
     - [2.0, 0.0, 0.0]
     - [0.0, 2.0, 0.0]
     - [0.0, 0.0, 2.0]
 
   sphere:
-    # 立方体の8つの頂点
+    # 立方体の8つの頂点（corners of the cubic unit cell）
+    # 位置座標は scaled units で指定
+    # 実際の位置 = position * length_scale
+
+    # 底面の4つの頂点 (z=0)
     - id: 1
       radius: 0.15
-      position: [0.0, 0.0, 0.0]
+      position: [0.0, 0.0, 0.0]  # 原点
     - id: 2
       radius: 0.15
-      position: [2.0, 0.0, 0.0]
+      position: [2.0, 0.0, 0.0]  # +X方向
     - id: 3
       radius: 0.15
-      position: [0.0, 2.0, 0.0]
+      position: [0.0, 2.0, 0.0]  # +Y方向
     - id: 4
       radius: 0.15
-      position: [2.0, 2.0, 0.0]
+      position: [2.0, 2.0, 0.0]  # +X+Y方向
+
+    # 上面の4つの頂点 (z=2.0)
     - id: 5
       radius: 0.15
-      position: [0.0, 0.0, 2.0]
+      position: [0.0, 0.0, 2.0]  # +Z方向
     - id: 6
       radius: 0.15
-      position: [2.0, 0.0, 2.0]
+      position: [2.0, 0.0, 2.0]  # +X+Z方向
     - id: 7
       radius: 0.15
-      position: [0.0, 2.0, 2.0]
+      position: [0.0, 2.0, 2.0]  # +Y+Z方向
     - id: 8
       radius: 0.15
-      position: [2.0, 2.0, 2.0]
+      position: [2.0, 2.0, 2.0]  # +X+Y+Z方向（対角）
 
   beam:
-    # 底面の4本
+    # ビーム（円柱）で球を接続
+    # endpoints: [sphere_id_1, sphere_id_2]
+    # thickness: ビームの直径（scaled units）
+
+    # 底面（z=0）の4本のエッジ
     - id: 1
-      endpoints: [1, 2]
+      endpoints: [1, 2]  # X方向
       thickness: 0.08
     - id: 2
-      endpoints: [1, 3]
+      endpoints: [1, 3]  # Y方向
       thickness: 0.08
     - id: 3
-      endpoints: [2, 4]
+      endpoints: [2, 4]  # Y方向
       thickness: 0.08
     - id: 4
-      endpoints: [3, 4]
+      endpoints: [3, 4]  # X方向
       thickness: 0.08
-    # 上面の4本
+
+    # 上面（z=2.0）の4本のエッジ
     - id: 5
-      endpoints: [5, 6]
+      endpoints: [5, 6]  # X方向
       thickness: 0.08
     - id: 6
-      endpoints: [5, 7]
+      endpoints: [5, 7]  # Y方向
       thickness: 0.08
     - id: 7
-      endpoints: [6, 8]
+      endpoints: [6, 8]  # Y方向
       thickness: 0.08
     - id: 8
-      endpoints: [7, 8]
+      endpoints: [7, 8]  # X方向
       thickness: 0.08
-    # 縦の4本
+
+    # 垂直（Z方向）の4本の柱
     - id: 9
-      endpoints: [1, 5]
+      endpoints: [1, 5]  # 原点から上へ
       thickness: 0.08
     - id: 10
-      endpoints: [2, 6]
+      endpoints: [2, 6]  # +X方向の柱
       thickness: 0.08
     - id: 11
-      endpoints: [3, 7]
+      endpoints: [3, 7]  # +Y方向の柱
       thickness: 0.08
     - id: 12
-      endpoints: [4, 8]
+      endpoints: [4, 8]  # +X+Y方向の柱
       thickness: 0.08
 
 mesh:
@@ -98,10 +120,13 @@ materials:
     density: 960  # kg/m^3
 
 study:
-  parametic_sweep:
-    strain:
-      delta: 0.01
-      range: [0.0, 0.05]
+  # Strain sweep configuration
+  strain_delta: 0.01          # Strain increment
+  strain_range: [0.0, 0.05]   # [min, max] strain range
+
+  # Note: Boundary conditions are automatically configured in the template
+  # - Fixed BC: One corner point to remove rigid body motion
+  # - Periodic BC: Manual displacement coupling (coupleX, coupleY, coupleZ)
   boundary_conditions:
-    fixed: true
-    copyface: true
+    fixed: true      # Apply fixed boundary condition (boxsel7)
+    copyface: true   # Apply periodic boundary conditions (manual implementation)
