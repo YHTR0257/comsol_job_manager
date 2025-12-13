@@ -99,6 +99,10 @@ pip-delete-this-directory.txt
 .tox/
 htmlcov/
 
+# Test output directories
+test_output/
+tests/output/
+
 # Ignore local IDE/run artifacts
 *.swp
 *.swo
