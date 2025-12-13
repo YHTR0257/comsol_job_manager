@@ -82,20 +82,20 @@ class GeometryValidator:
         warnings = []
 
         # Check for sphere overlaps
-        overlap_errors = self._check_sphere_overlaps(geometry.sphere)
+        overlap_errors = self._check_sphere_overlaps(geometry.spheres)
         errors.extend(overlap_errors)
 
         # Check beam-sphere connections
-        if geometry.beam:
+        if geometry.beams:
             connection_errors = self._check_beam_connections(
-                geometry.sphere,
-                geometry.beam
+                geometry.spheres,
+                geometry.beams
             )
             errors.extend(connection_errors)
 
-        # Check lattice vectors
-        lattice_warnings = self._check_lattice_vectors(geometry.lattice_vector)
-        warnings.extend(lattice_warnings)
+        # Note: lattice_constant validation removed (it's now a scalar, not vectors)
+        # The lattice_constant is used as a reference length and doesn't need
+        # geometric validation like vectors did
 
         is_valid = len(errors) == 0
 

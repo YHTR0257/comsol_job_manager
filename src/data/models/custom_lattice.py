@@ -3,44 +3,26 @@
 This module defines the data models for custom lattice structures used in
 COMSOL simulations. It uses Pydantic for validation and parsing of YAML
 job files.
+
+Design version: v2.0 (2025-12-13)
+Based on: docs/feature/FU01_custom_lattice.md
 """
 
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
-from pathlib import Path
-
-
-class LatticeVector(BaseModel):
-    """Lattice vector definition for periodic boundary conditions.
-
-    Attributes:
-        x: X component of the lattice vector
-        y: Y component of the lattice vector
-        z: Z component of the lattice vector
-    """
-    x: float
-    y: float
-    z: float
-
-    @classmethod
-    def from_list(cls, data: List[float]) -> "LatticeVector":
-        """Create LatticeVector from a list [x, y, z]."""
-        if len(data) != 3:
-            raise ValueError(f"Lattice vector must have 3 components, got {len(data)}")
-        return cls(x=data[0], y=data[1], z=data[2])
 
 
 class Sphere(BaseModel):
     """Sphere geometry definition.
 
     Attributes:
-        id: Unique identifier for the sphere
-        radius: Radius of the sphere (must be positive)
-        position: Position [x, y, z] of the sphere center
+        id: Unique identifier for the sphere (1-indexed in YAML)
+        position: Position [x, y, z] in mm (absolute coordinates)
+        radius: Radius in mm (must be positive)
     """
     id: int = Field(..., gt=0, description="Sphere ID must be positive")
-    radius: float = Field(..., gt=0, description="Radius must be positive")
     position: List[float] = Field(..., min_length=3, max_length=3)
+    radius: float = Field(..., gt=0, description="Radius must be positive")
 
     @field_validator('position')
     @classmethod
@@ -55,9 +37,9 @@ class Beam(BaseModel):
     """Beam (cylinder) geometry connecting two spheres.
 
     Attributes:
-        id: Unique identifier for the beam
-        endpoints: List of two sphere IDs that this beam connects
-        thickness: Thickness (diameter) of the beam (must be positive)
+        id: Unique identifier for the beam (1-indexed in YAML)
+        endpoints: List of two sphere IDs (1-indexed) that this beam connects
+        thickness: Thickness/diameter in mm (must be positive)
     """
     id: int = Field(..., gt=0, description="Beam ID must be positive")
     endpoints: List[int] = Field(..., min_length=2, max_length=2)
@@ -78,28 +60,19 @@ class Geometry(BaseModel):
     """Complete geometry definition for custom lattice.
 
     Attributes:
-        lattice_vector: Three lattice vectors defining the unit cell
-        sphere: List of sphere definitions
-        beam: List of beam definitions
+        lattice_constant: Lattice constant in mm (scalar)
+        spheres: List of sphere definitions
+        beams: List of beam definitions
     """
-    lattice_vector: List[List[float]] = Field(..., min_length=3, max_length=3)
-    sphere: List[Sphere] = Field(..., min_length=1)
-    beam: List[Beam] = Field(default_factory=list)
-
-    @field_validator('lattice_vector')
-    @classmethod
-    def validate_lattice_vectors(cls, v):
-        """Validate lattice vectors are 3D."""
-        for i, vec in enumerate(v):
-            if len(vec) != 3:
-                raise ValueError(f"Lattice vector {i+1} must have 3 components")
-        return v
+    lattice_constant: float = Field(..., gt=0, description="Lattice constant in mm")
+    spheres: List[Sphere] = Field(..., min_length=1)
+    beams: List[Beam] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def validate_beam_references(self):
         """Validate that beam endpoints reference existing spheres."""
-        sphere_ids = {s.id for s in self.sphere}
-        for beam in self.beam:
+        sphere_ids = {s.id for s in self.spheres}
+        for beam in self.beams:
             for endpoint_id in beam.endpoints:
                 if endpoint_id not in sphere_ids:
                     raise ValueError(
@@ -110,7 +83,7 @@ class Geometry(BaseModel):
     @model_validator(mode='after')
     def validate_unique_sphere_ids(self):
         """Validate that all sphere IDs are unique."""
-        sphere_ids = [s.id for s in self.sphere]
+        sphere_ids = [s.id for s in self.spheres]
         if len(sphere_ids) != len(set(sphere_ids)):
             duplicates = [sid for sid in sphere_ids if sphere_ids.count(sid) > 1]
             raise ValueError(f"Duplicate sphere IDs found: {set(duplicates)}")
@@ -119,7 +92,7 @@ class Geometry(BaseModel):
     @model_validator(mode='after')
     def validate_unique_beam_ids(self):
         """Validate that all beam IDs are unique."""
-        beam_ids = [b.id for b in self.beam]
+        beam_ids = [b.id for b in self.beams]
         if len(beam_ids) != len(set(beam_ids)):
             duplicates = [bid for bid in beam_ids if beam_ids.count(bid) > 1]
             raise ValueError(f"Duplicate beam IDs found: {set(duplicates)}")
@@ -130,10 +103,10 @@ class Mesh(BaseModel):
     """Mesh configuration for COMSOL.
 
     Attributes:
-        size: Mesh element size parameter
-        type: Mesh type (e.g., FreeTri, FreeQuad)
+        size: Mesh size parameter (autoMeshSize value: 1-9)
+        type: Mesh type (e.g., FreeTri) - currently unused, for future extension
     """
-    size: float = Field(..., gt=0, description="Mesh size must be positive")
+    size: int = Field(..., ge=1, le=9, description="Mesh size must be 1-9")
     type: str = Field(default="FreeTri")
 
 
@@ -163,25 +136,26 @@ class BoundaryConditions(BaseModel):
     copyface: bool = True
 
 
+class StrainConfig(BaseModel):
+    """Strain configuration for the study.
+
+    Attributes:
+        delta: Maximum strain (e.g., 0.01 = 1%)
+        steps: Displacement steps (e.g., "0, 0.25, 0.5, 0.75, 1")
+    """
+    delta: float = Field(..., gt=0, description="Maximum strain")
+    steps: str = Field(..., description="Displacement steps")
+
+
 class Study(BaseModel):
     """Study configuration.
 
     Attributes:
-        strain_delta: Strain increment for parametric sweep
-        strain_range: [min, max] strain range
+        strain: Strain configuration
         boundary_conditions: Boundary condition settings
     """
-    strain_delta: float = Field(..., gt=0)
-    strain_range: List[float] = Field(..., min_length=2, max_length=2)
+    strain: StrainConfig
     boundary_conditions: BoundaryConditions
-
-    @field_validator('strain_range')
-    @classmethod
-    def validate_strain_range(cls, v):
-        """Validate strain_range is [min, max] with min < max."""
-        if v[0] >= v[1]:
-            raise ValueError(f"Strain range must be [min, max] with min < max, got {v}")
-        return v
 
 
 class ParametricSweep(BaseModel):
@@ -200,39 +174,10 @@ class Parametric(BaseModel):
 
     Attributes:
         default: Default parameter values
-        sweeps: List of parametric sweeps (can be any number)
-        sweep1: First parametric sweep (optional, for backward compatibility)
-        sweep2: Second parametric sweep (optional, for backward compatibility)
+        sweeps: List of parametric sweeps
     """
-    default: Dict[str, float]
-    sweeps: Optional[List[ParametricSweep]] = None
-    sweep1: Optional[ParametricSweep] = None
-    sweep2: Optional[ParametricSweep] = None
-
-    @model_validator(mode='after')
-    def consolidate_sweeps(self):
-        """Consolidate sweep1/sweep2 into sweeps list for unified handling."""
-        if self.sweeps is None:
-            self.sweeps = []
-
-        # Add sweep1 and sweep2 to sweeps list if they exist
-        if self.sweep1 is not None and self.sweep1 not in self.sweeps:
-            self.sweeps.append(self.sweep1)
-        if self.sweep2 is not None and self.sweep2 not in self.sweeps:
-            self.sweeps.append(self.sweep2)
-
-        return self
-
-
-class Scale(BaseModel):
-    """Scaling factors for the simulation.
-
-    Attributes:
-        length: Length scale in meters
-        force: Force scale in Newtons
-    """
-    length: float = Field(..., gt=0)
-    force: float = Field(..., gt=0)
+    default: Dict[str, float] = Field(default_factory=dict)
+    sweeps: List[ParametricSweep] = Field(default_factory=list)
 
 
 class Job(BaseModel):
@@ -241,55 +186,97 @@ class Job(BaseModel):
     Attributes:
         name: Job name
         description: Job description
-        scale: Scaling factors
+        unit_cell_size: Unit cell dimensions [Lx, Ly, Lz] in mm
         parametric: Parametric study configuration
-        unit_cell_size: Unit cell dimensions [Lx, Ly, Lz] in scaled units
     """
     name: str
     description: str = ""
-    scale: Scale
-    parametric: Parametric
     unit_cell_size: List[float] = Field(..., min_length=3, max_length=3)
+    parametric: Parametric = Field(default_factory=Parametric)
+
+    @field_validator('unit_cell_size')
+    @classmethod
+    def validate_unit_cell_size(cls, v):
+        """Validate unit cell size has 3 positive components."""
+        if any(x <= 0 for x in v):
+            raise ValueError(f"Unit cell size must have all positive components, got {v}")
+        return v
 
 
 class CustomLatticeJob(BaseModel):
     """Complete custom lattice job definition.
 
     This is the top-level model for parsing custom lattice YAML files.
+    Design based on docs/feature/FU01_custom_lattice.md v2.0
 
     Attributes:
         job: Job metadata and parametric configuration
-        geometry: Lattice geometry definition
-        mesh: Mesh configuration
+        geometry: Lattice geometry definition (spheres and beams)
         materials: Material properties dictionary
-        study: Study configuration
+        mesh: Mesh configuration
+        study: Study configuration (strain and boundary conditions)
     """
     job: Job
     geometry: Geometry
-    mesh: Mesh
     materials: Dict[str, Material]
+    mesh: Mesh
     study: Study
 
     @model_validator(mode='after')
     def validate_parametric_parameters(self):
-        """Validate that parametric sweep parameters are valid."""
-        # Check if sweep parameters reference valid geometry properties
-        valid_prefixes = ['sphere.radius', 'beam.thickness']
+        """Validate that parametric sweep parameters are valid.
 
-        if self.job.parametric.sweep1:
-            param = self.job.parametric.sweep1.parameter
-            if not any(param.startswith(prefix) for prefix in valid_prefixes):
+        Supports:
+        - sphere.radius (all spheres)
+        - sphere.{index}.radius (specific sphere, 0-indexed)
+        - beam.thickness (all beams)
+        - beam.{index}.thickness (specific beam, 0-indexed)
+        """
+        valid_patterns = [
+            'sphere.radius',
+            'sphere.',  # Allows sphere.0.radius, sphere.1.radius, etc.
+            'beam.thickness',
+            'beam.',     # Allows beam.0.thickness, beam.1.thickness, etc.
+        ]
+
+        for sweep in self.job.parametric.sweeps:
+            param = sweep.parameter
+            is_valid = any(param.startswith(pattern) for pattern in valid_patterns)
+
+            if not is_valid:
                 raise ValueError(
                     f"Invalid parametric parameter '{param}'. "
-                    f"Must be one of: {valid_prefixes}"
+                    f"Must match: sphere.radius, sphere.{{N}}.radius, "
+                    f"beam.thickness, or beam.{{N}}.thickness"
                 )
 
-        if self.job.parametric.sweep2:
-            param = self.job.parametric.sweep2.parameter
-            if not any(param.startswith(prefix) for prefix in valid_prefixes):
-                raise ValueError(
-                    f"Invalid parametric parameter '{param}'. "
-                    f"Must be one of: {valid_prefixes}"
-                )
+            # Validate index if specific element is referenced
+            if '.' in param and param.count('.') == 2:
+                parts = param.split('.')
+                prefix, index_str, field = parts
+
+                try:
+                    index = int(index_str)
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid index in parameter '{param}': '{index_str}' is not an integer"
+                    )
+
+                # Validate index is within bounds
+                if prefix == 'sphere':
+                    if index < 0 or index >= len(self.geometry.spheres):
+                        raise ValueError(
+                            f"Sphere index {index} out of bounds (0-{len(self.geometry.spheres)-1})"
+                        )
+                    if field != 'radius':
+                        raise ValueError(f"Invalid field for sphere: '{field}' (must be 'radius')")
+
+                elif prefix == 'beam':
+                    if index < 0 or index >= len(self.geometry.beams):
+                        raise ValueError(
+                            f"Beam index {index} out of bounds (0-{len(self.geometry.beams)-1})"
+                        )
+                    if field != 'thickness':
+                        raise ValueError(f"Invalid field for beam: '{field}' (must be 'thickness')")
 
         return self

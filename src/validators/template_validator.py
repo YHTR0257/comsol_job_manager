@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
-from ..config.loader import get_logger
+from ..config.loader import get_logger, load_config, get_config_path_for_env
 
 logger = get_logger(__name__)
+
+# Load job generator configuration for validation settings
+_config = load_config(get_config_path_for_env('job_generator'))
 
 
 @dataclass
@@ -68,23 +71,30 @@ class TemplateValidationResult:
 class JavaCodeValidator:
     """Validator for generated Java code."""
 
-    # Maximum line length for Java code
-    MAX_LINE_LENGTH = 120
-
-    # Patterns that might indicate rendering issues (error level)
-    ERROR_PATTERNS = [
-        (r'\{\s*\{', 'Unrendered Jinja2 variable'),
-        (r'\{%', 'Unrendered Jinja2 block'),
-    ]
-
-    # Patterns for code quality issues (warning level)
-    WARNING_PATTERNS = [
-        (r'\s{20,}', 'Excessive whitespace (20+ spaces)'),
-    ]
-
     def __init__(self):
-        """Initialize the Java code validator."""
-        pass
+        """Initialize validator with config settings."""
+        validation_config = _config['validation']
+
+        # Maximum line length for Java code
+        self.MAX_LINE_LENGTH = validation_config.get('max_line_length', 120)
+
+        # Check for excessive whitespace
+        self.check_excessive_whitespace = validation_config.get('check_excessive_whitespace', True)
+
+        # Patterns that might indicate rendering issues (error level)
+        # Use custom delimiters from config
+        var_pattern = validation_config.get('jinja2_variable_pattern', r'<<\s*[\w\.\[\]"\'\(\)]+\s*>>')
+        block_pattern = validation_config.get('jinja2_block_pattern', r'<%\s*(for|if|endif|endfor|else|elif)\s+.*?%>')
+
+        self.ERROR_PATTERNS = [
+            (var_pattern, 'Unrendered Jinja2 variable'),
+            (block_pattern, 'Unrendered Jinja2 block'),
+        ]
+
+        # Patterns for code quality issues (warning level)
+        self.WARNING_PATTERNS = [
+            (r'\s{20,}', 'Excessive whitespace (20+ spaces)'),
+        ]
 
     def validate_rendered_java(self, java_code: str) -> TemplateValidationResult:
         """Validate rendered Java code.

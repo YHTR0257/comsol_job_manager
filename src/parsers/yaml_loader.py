@@ -178,11 +178,12 @@ def get_job_summary(job: CustomLatticeJob) -> str:
     lines = [
         f"Job: {job.job.name}",
         f"Description: {job.job.description}",
+        f"Unit Cell: {job.job.unit_cell_size} mm",
         f"",
         f"Geometry:",
-        f"  Spheres: {len(job.geometry.sphere)}",
-        f"  Beams: {len(job.geometry.beam)}",
-        f"  Lattice vectors: {len(job.geometry.lattice_vector)}",
+        f"  Lattice constant: {job.geometry.lattice_constant} mm",
+        f"  Spheres: {len(job.geometry.spheres)}",
+        f"  Beams: {len(job.geometry.beams)}",
         f"",
         f"Materials: {', '.join(job.materials.keys())}",
         f"",
@@ -190,20 +191,19 @@ def get_job_summary(job: CustomLatticeJob) -> str:
         f"  Type: {job.mesh.type}",
         f"  Size: {job.mesh.size}",
         f"",
+        f"Study:",
+        f"  Strain delta: {job.study.strain.delta}",
+        f"  Strain steps: {job.study.strain.steps}",
+        f"",
         f"Parametric Study:",
         f"  Default parameters: {len(job.job.parametric.default)}",
+        f"  Sweeps: {len(job.job.parametric.sweeps)}",
     ]
 
-    if job.job.parametric.sweep1:
+    for idx, sweep in enumerate(job.job.parametric.sweeps, 1):
         lines.append(
-            f"  Sweep 1: {job.job.parametric.sweep1.parameter} "
-            f"({len(job.job.parametric.sweep1.values)} values)"
-        )
-
-    if job.job.parametric.sweep2:
-        lines.append(
-            f"  Sweep 2: {job.job.parametric.sweep2.parameter} "
-            f"({len(job.job.parametric.sweep2.values)} values)"
+            f"    Sweep {idx}: {sweep.parameter} "
+            f"({len(sweep.values)} values: {sweep.values})"
         )
 
     return "\n".join(lines)

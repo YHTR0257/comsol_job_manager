@@ -13,11 +13,14 @@ from typing import Dict, Any, Optional
 
 from jinja2 import Environment, FileSystemLoader, Template
 
-from src.config.loader import get_logger
+from src.config.loader import get_logger, load_config, get_config_path_for_env
 from src.utils.path_utils import detect_wsl, wsl_to_windows_path
 from src.validators.template_validator import validate_generated_java
 
 _logger = get_logger("services.job_generator")
+
+# Load job generator configuration
+_config = load_config(get_config_path_for_env('job_generator'))
 
 
 class JobGenerator:
@@ -38,12 +41,20 @@ class JobGenerator:
         self.template_dir = Path(template_dir)
         self.output_base_dir = Path(output_base_dir)
 
-        # Setup Jinja2 environment
+        # Setup Jinja2 environment with custom delimiters from config
+        # This avoids conflicts with Java/C++ code syntax ({{, }})
+        jinja_config = _config['jinja2']
         self.jinja_env = Environment(
             loader=FileSystemLoader(str(self.template_dir)),
-            trim_blocks=True,
-            lstrip_blocks=True,
-            keep_trailing_newline=True
+            block_start_string=jinja_config['block_start_string'],
+            block_end_string=jinja_config['block_end_string'],
+            variable_start_string=jinja_config['variable_start_string'],
+            variable_end_string=jinja_config['variable_end_string'],
+            comment_start_string=jinja_config['comment_start_string'],
+            comment_end_string=jinja_config['comment_end_string'],
+            trim_blocks=jinja_config['trim_blocks'],
+            lstrip_blocks=jinja_config['lstrip_blocks'],
+            keep_trailing_newline=jinja_config['keep_trailing_newline']
         )
 
         # Ensure output directory exists
@@ -284,7 +295,8 @@ class JobGenerator:
         self,
         custom_job: 'CustomLatticeJob',
         job_id: Optional[str] = None,
-        run_id: Optional[str] = None
+        run_id: Optional[str] = None,
+        param_set: Optional['ParameterSet'] = None
     ) -> Dict[str, Any]:
         """Generate job for custom lattice structure.
 
@@ -292,6 +304,7 @@ class JobGenerator:
             custom_job: CustomLatticeJob object from YAML
             job_id: Optional specific job ID (for parametric sweeps)
             run_id: Optional run ID for grouping multiple jobs
+            param_set: Optional parameter set to apply (for parametric sweeps)
 
         Returns:
             Dictionary with paths to generated files and metadata
@@ -321,7 +334,8 @@ class JobGenerator:
         java_file = self._generate_custom_lattice_java(
             job_dir,
             custom_job,
-            job_id
+            job_id,
+            param_set
         )
 
         # Generate batch file
@@ -355,7 +369,8 @@ class JobGenerator:
         self,
         job_dir: Path,
         custom_job: 'CustomLatticeJob',
-        job_id: str
+        job_id: str,
+        param_set: Optional['ParameterSet'] = None
     ) -> Path:
         """Generate Java file for custom lattice from template.
 
@@ -363,34 +378,48 @@ class JobGenerator:
             job_dir: Job directory
             custom_job: CustomLatticeJob definition
             job_id: Job identifier
+            param_set: Optional parameter set to apply (for parametric sweeps)
 
         Returns:
             Path to generated Java file
         """
+        from ..services.geometry_builder import GeometryBuilder, ParameterSet
+
         # Load custom lattice template
         template = self.jinja_env.get_template('custom_lattice.java.j2')
 
         # Prepare template variables
         class_name = job_id.replace('-', '_').replace('.', '_')
-        output_path = str(job_dir)
-        stl_path = str(job_dir / "structure.stl")
 
         # Get first material (assuming single material for now)
         first_material = list(custom_job.materials.values())[0]
 
-        # Prepare strain study parameters
-        # Study contains strain delta and range directly
-        strain_delta = custom_job.study.strain_delta
-        strain_min, strain_max = custom_job.study.strain_range
+        # Build geometry data using GeometryBuilder
+        builder = GeometryBuilder()
+
+        # If no param_set provided, use defaults
+        if param_set is None:
+            # Create a dummy parameter set with default values
+            default_params = custom_job.job.parametric.default.copy()
+            param_set = ParameterSet(
+                job_id=job_id,
+                parameters=default_params,
+                sweep_indices=()
+            )
+
+        # Apply parameters to geometry
+        geometry_data = builder.build_geometry_data(custom_job, param_set)
+
+        # Calculate default sphere radius and beam radius from geometry
+        default_sphere_radius = geometry_data.spheres[0].radius if geometry_data.spheres else 1.0
+        default_beam_radius = geometry_data.beams[0].thickness / 2.0 if geometry_data.beams else 0.25
 
         template_vars = {
+            # Job metadata
             'class_name': class_name,
             'file_name': job_id,
-            'output_path': output_path,
-            'stl_path': stl_path,
-            # Scale
-            'scale_length': custom_job.job.scale.length,
-            'scale_force': custom_job.job.scale.force,
+            'job_name': custom_job.job.name,
+            'job_description': custom_job.job.description,
             # Unit cell size
             'unit_cell_size': custom_job.job.unit_cell_size,
             # Material
@@ -401,13 +430,13 @@ class JobGenerator:
             'mesh_size': custom_job.mesh.size,
             'mesh_type': custom_job.mesh.type,
             # Strain study
-            'strain_delta': strain_delta,
-            'strain_min': strain_min,
-            'strain_max': strain_max,
+            'strain_delta': custom_job.study.strain.delta,
+            'strain_steps': custom_job.study.strain.steps,
             # Geometry
-            'lattice_vectors': custom_job.geometry.lattice_vector,
-            'spheres': custom_job.geometry.sphere,
-            'beams': custom_job.geometry.beam,
+            'lattice_constant': geometry_data.lattice_constant,
+            'default_sphere_radius': default_sphere_radius,
+            'default_beam_radius': default_beam_radius,
+            'geometry': geometry_data,
         }
 
         # Render template
@@ -457,14 +486,11 @@ class JobGenerator:
             'description': custom_job.job.description,
             'generated_at': datetime.now().isoformat(),
             'geometry': {
-                'num_spheres': len(custom_job.geometry.sphere),
-                'num_beams': len(custom_job.geometry.beam),
-                'lattice_vectors': custom_job.geometry.lattice_vector,
+                'num_spheres': len(custom_job.geometry.spheres),
+                'num_beams': len(custom_job.geometry.beams),
+                'lattice_constant': custom_job.geometry.lattice_constant,
             },
-            'scale': {
-                'length': custom_job.job.scale.length,
-                'force': custom_job.job.scale.force,
-            },
+            'unit_cell_size': custom_job.job.unit_cell_size,
             'parametric': {
                 'defaults': custom_job.job.parametric.default,
             }

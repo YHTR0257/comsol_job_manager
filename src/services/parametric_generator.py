@@ -128,6 +128,10 @@ class ParametricGenerator:
         This creates a new job definition with parameters applied to
         the geometry (updating sphere radii, beam thickness, etc.)
 
+        Application order:
+        1. Global parameters (sphere.radius, beam.thickness) applied to all
+        2. Specific parameters (sphere.0.radius, beam.3.thickness) override
+
         Args:
             param_set: Parameter set to apply
 
@@ -139,17 +143,42 @@ class ParametricGenerator:
         # Deep copy the job to avoid modifying the original
         new_job = copy.deepcopy(self.job)
 
-        # Apply parameters to geometry
+        # Step 1: Apply global parameters first
+        if 'sphere.radius' in param_set.parameters:
+            radius = param_set.parameters['sphere.radius']
+            for sphere in new_job.geometry.spheres:
+                sphere.radius = radius
+
+        if 'beam.thickness' in param_set.parameters:
+            thickness = param_set.parameters['beam.thickness']
+            for beam in new_job.geometry.beams:
+                beam.thickness = thickness
+
+        # Step 2: Apply specific parameters (override globals)
         for param_name, param_value in param_set.parameters.items():
-            if param_name.startswith('sphere.radius'):
-                # Apply to all spheres or specific sphere
-                for sphere in new_job.geometry.sphere:
-                    sphere.radius = param_value
-            elif param_name.startswith('beam.thickness'):
-                # Apply to all beams or specific beam
-                for beam in new_job.geometry.beam:
-                    beam.thickness = param_value
-            # Add more parameter types as needed
+            # Parse sphere.{index}.radius
+            if param_name.startswith('sphere.') and param_name.count('.') == 2:
+                parts = param_name.split('.')
+                try:
+                    index = int(parts[1])
+                    field = parts[2]
+
+                    if field == 'radius' and 0 <= index < len(new_job.geometry.spheres):
+                        new_job.geometry.spheres[index].radius = param_value
+                except (ValueError, IndexError):
+                    continue  # Skip invalid parameter names
+
+            # Parse beam.{index}.thickness
+            elif param_name.startswith('beam.') and param_name.count('.') == 2:
+                parts = param_name.split('.')
+                try:
+                    index = int(parts[1])
+                    field = parts[2]
+
+                    if field == 'thickness' and 0 <= index < len(new_job.geometry.beams):
+                        new_job.geometry.beams[index].thickness = param_value
+                except (ValueError, IndexError):
+                    continue  # Skip invalid parameter names
 
         return new_job
 
