@@ -42,6 +42,9 @@ Examples:
 
   # Skip geometry validation (not recommended)
   python scripts/generate_custom_lattice_job.py -i my_lattice.yml --no-validate
+
+  # Skip confirmation for batch generation
+  python scripts/generate_custom_lattice_job.py -i my_lattice.yml -y
         """
     )
 
@@ -85,6 +88,12 @@ Examples:
         help='Enable verbose output'
     )
 
+    parser.add_argument(
+        '-y', '--yes',
+        action='store_true',
+        help='Skip confirmation prompts'
+    )
+
     args = parser.parse_args()
 
     # Print header
@@ -121,8 +130,8 @@ Examples:
     print("Job Information:")
     print(f"  Name: {custom_job.job.name}")
     print(f"  Description: {custom_job.job.description}")
-    print(f"  Geometry: {len(custom_job.geometry.sphere)} spheres, "
-          f"{len(custom_job.geometry.beam)} beams")
+    print(f"  Geometry: {len(custom_job.geometry.spheres)} spheres, "
+          f"{len(custom_job.geometry.beams)} beams")
     print()
 
     # Display parametric study information
@@ -142,8 +151,8 @@ Examples:
 
     print()
 
-    # Ask for confirmation if many jobs
-    if sweep_info['total_jobs'] > 10:
+    # Ask for confirmation if many jobs (unless --yes flag is set)
+    if sweep_info['total_jobs'] > 10 and not args.yes:
         response = input(f"Generate {sweep_info['total_jobs']} jobs? [y/N]: ")
         if response.lower() not in ['y', 'yes']:
             print("Cancelled.")

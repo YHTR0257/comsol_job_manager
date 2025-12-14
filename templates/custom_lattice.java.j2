@@ -72,19 +72,20 @@ public class << class_name >> {
      * @return the configured and solved COMSOL model
      */
     public static Model run() {
-        String file = "job_1207";
+        String file = "<< file_name >>";
         log("=== COMSOL Job Starting ===");
 
         Model model = null;
         File projectRoot = null;
         File resultPath = null;
         double[] uni_size = null;
-        double delta_ = 0.01;  // Maximum strain = 1% (delta * disp_max = 0.01 * 1 = 0.01)
-        String[] dstep = new String[]{"0, 0.25, 0.5, 0.75, 1"};
-        double pratio = 0.0;
-        double lconst = 15.0;
-        double rs = 1.0;  // 100./100. = 1.0 (matching ref.java)
-        double rb = 0.25; // 25./100. = 0.25 (matching ref.java)
+        double delta_ = << strain_delta >>;
+        String[] dstep = new String[]{"<< strain_steps >>"};
+        double poissonRatio = << poissons_ratio >>;
+        double youngModulus = << youngs_modulus >>;
+        double density = << density >>;
+        double lconst = << lattice_constant >>;
+        double rs = << default_sphere_radius >>;
         String[] strainParams = null;
 
         try {
@@ -127,6 +128,13 @@ public class << class_name >> {
 
             // Unit cell size
             uni_size = new double[]{<< geometry.unit_cell_size[0] >>, << geometry.unit_cell_size[1] >>, << geometry.unit_cell_size[2] >>};
+
+            // Beam thicknesses (diameter) for each beam
+            double[] beamThicknesses = new double[]{
+<% for beam in geometry.beams %>
+                << beam.thickness >><% if not loop.last %>,<% endif %>  // beam_<< "%03d"|format(beam.id) >>
+<% endfor %>
+            };
         } catch (Exception e) {
             log("ERROR in STEP 1 (Setting up geometry data): " + e.getMessage());
             e.printStackTrace();
@@ -147,7 +155,7 @@ public class << class_name >> {
 
         try {
             log("STEP 3: Setting parameters");
-            setupParameters(model, uni_size, lconst, rs, rb, delta_);
+            setupParameters(model, uni_size, lconst, rs, delta_);
             log("Parameters configured");
         } catch (Exception e) {
             log("ERROR in STEP 3 (Setting parameters): " + e.getMessage());
@@ -176,7 +184,7 @@ public class << class_name >> {
 
         try {
             log("STEP 6: Creating geometry");
-            model = geometry(model, uni_size, points, lines);
+            model = geometry(model, uni_size, points, lines, beamThicknesses);
             log("Geometry created successfully");
         } catch (Exception e) {
             log("ERROR in STEP 6 (Creating geometry): " + e.getMessage());
@@ -224,7 +232,7 @@ public class << class_name >> {
 
         try {
             log("STEP 10: Setting up material");
-            setupMaterial(model, pratio);
+            setupMaterial(model, poissonRatio, youngModulus, density);
             log("Material configured");
         } catch (Exception e) {
             log("ERROR in STEP 10 (Setting up material): " + e.getMessage());
@@ -331,11 +339,10 @@ public class << class_name >> {
      *
      * @param model the COMSOL model
      * @param uni_size unit cell dimensions [Lx, Ly, Lz]
-     * @param rs sphere radius
-     * @param rb beam radius
+     * @param rs sphere radius (default)
      * @param delta_ delta parameter for strain
      */
-    private static void setupParameters(Model model, double[] uni_size, double lconst, double rs, double rb, double delta_) {
+    private static void setupParameters(Model model, double[] uni_size, double lconst, double rs, double delta_) {
         log("  Setting unit cell dimensions: Lx=" + uni_size[0] + ", Ly=" + uni_size[1] + ", Lz=" + uni_size[2]);
         model.param().set("disp", "0");
         model.param().set("Lx", uni_size[0] + "[mm]");
@@ -343,9 +350,8 @@ public class << class_name >> {
         model.param().set("Lz", uni_size[2] + "[mm]");
         model.param().set("lconst", lconst + "[mm]");
 
-        log("  Setting radii: Rs=" + rs + ", Rb=" + rb);
+        log("  Setting default sphere radius: Rs=" + rs);
         model.param().set("Rs", rs);
-        model.param().set("Rb", rb);
 
         log("  Setting strain tensor components (identity)");
         model.param().set("E11", 1);
@@ -393,9 +399,10 @@ public class << class_name >> {
      * @param uni_size unit cell dimensions
      * @param points array of sphere positions [n][3]
      * @param lines array of beam lines [n][2][3] (matching ref.java select_bonds format)
+     * @param beamThicknesses array of beam thicknesses (diameter) for each beam
      * @return the model with geometry created
      */
-    public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines) {
+    public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines, double[] beamThicknesses) {
         log("  Creating geometry sequence");
         model.component("comp1").geom().create("geom1", 3);
         model.component("comp1").geom("geom1").lengthUnit("mm");
@@ -408,7 +415,7 @@ public class << class_name >> {
         // Create beams using Sweep method (matching ref.java)
         log("  Creating " + lines.length + " beams using Sweep method");
         int numBeams = lines.length;
-        createBeams(model, lines, numSpheres);
+        createBeams(model, lines, beamThicknesses, numSpheres);
 
         // Create blocks and difference operations (matching ref.java)
         log("  Creating blocks and difference operations");
@@ -470,14 +477,16 @@ public class << class_name >> {
      *
      * @param model the COMSOL model
      * @param lines array of beam lines [n][2][3] where each beam is [[x1,y1,z1], [x2,y2,z2]]
+     * @param beamThicknesses array of beam thicknesses (diameter) for each beam
      * @param i number of spheres (for positioning union operation)
      */
-    private static void createBeams(Model model, double[][][] lines, int i) {
+    private static void createBeams(Model model, double[][][] lines, double[] beamThicknesses, int i) {
         int j = 0;
 
         for (double[][] l : lines) {
             double[] coord1 = l[0];
             double[] coord2 = l[1];
+            double beamRadius = beamThicknesses[j] / 2.0;  // Convert thickness (diameter) to radius
 
             double[] ln = new double[3];
             for (int k = 0; k < 3; k++) {
@@ -500,9 +509,9 @@ public class << class_name >> {
             model.component("comp1").geom("geom1").feature(wp).set("normalvector", ln);
             model.component("comp1").geom("geom1").feature(wp).set("normalcoord", coord1);
 
-            // Create Circle on WorkPlane
+            // Create Circle on WorkPlane with beam-specific radius
             model.component("comp1").geom("geom1").feature(wp).geom().create("c1", "Circle");
-            model.component("comp1").geom("geom1").feature(wp).geom().feature("c1").set("r", "Rb");
+            model.component("comp1").geom("geom1").feature(wp).geom().feature("c1").set("r", beamRadius);
 
             // Create Sweep
             String swp = "swp" + j;
@@ -743,14 +752,16 @@ public class << class_name >> {
      * Sets up material properties.
      *
      * @param model the COMSOL model
-     * @param pratio Poisson's ratio
+     * @param poissonRatio Poisson's ratio
+     * @param youngModulus Young's modulus (Pa)
+     * @param density Density (kg/m³)
      */
-    private static void setupMaterial(Model model, double pratio) {
+    private static void setupMaterial(Model model, double poissonRatio, double youngModulus, double density) {
         model.component("comp1").material().create("mat1", "Common");
-        model.component("comp1").material("mat1").propertyGroup("def").set("density", "950");
-        model.component("comp1").material("mat1").propertyGroup("def").set("poissonsratio", pratio + "-eps");
-        model.component("comp1").material("mat1").propertyGroup("def").set("youngsmodulus", "10[MPa]");
-        log("  Material properties: density=950, poissonsratio=" + pratio + ", youngsmodulus=10MPa");
+        model.component("comp1").material("mat1").propertyGroup("def").set("density", String.valueOf(density));
+        model.component("comp1").material("mat1").propertyGroup("def").set("poissonsratio", poissonRatio + "-eps");
+        model.component("comp1").material("mat1").propertyGroup("def").set("youngsmodulus", youngModulus + "[Pa]");
+        log("  Material properties: density=" + density + " kg/m³, poisson's ratio=" + poissonRatio + ", young's modulus=" + youngModulus + " Pa");
     }
 
     /**
@@ -1264,7 +1275,7 @@ public class << class_name >> {
         }
 
         try {
-            java.net.URL classUrl = Job1207.class.getResource("Job1207.class");
+            java.net.URL classUrl = << class_name >>.class.getResource("<< class_name >>.class");
             if (classUrl != null) {
                 File classPath = new File(classUrl.toURI()).getParentFile();
 

@@ -160,27 +160,36 @@ class GeometryBuilder:
         if 'beam.thickness' in param_set.parameters:
             thickness = param_set.parameters['beam.thickness']
             for beam in new_geometry.beams:
-                beam.thickness = thickness
+                # 第一近接ビーム (id: 1-24) には直接適用
+                # 第二近接ビーム (id: 25以降) には0.8倍を適用
+                if beam.id <= 24:
+                    beam.thickness = thickness
+                else:
+                    beam.thickness = thickness * 0.8
 
         # Step 2: Apply specific parameters (override globals)
         for param_name, param_value in param_set.parameters.items():
             # Parse sphere.{index}.radius
             if param_name.startswith('sphere.') and param_name.count('.') == 2:
                 parts = param_name.split('.')
-                index = int(parts[1])
-                field = parts[2]
+                # Check if parts[1] is a digit (index)
+                if parts[1].isdigit():
+                    index = int(parts[1])
+                    field = parts[2]
 
-                if field == 'radius' and 0 <= index < len(new_geometry.spheres):
-                    new_geometry.spheres[index].radius = param_value
+                    if field == 'radius' and 0 <= index < len(new_geometry.spheres):
+                        new_geometry.spheres[index].radius = param_value
 
             # Parse beam.{index}.thickness
             elif param_name.startswith('beam.') and param_name.count('.') == 2:
                 parts = param_name.split('.')
-                index = int(parts[1])
-                field = parts[2]
+                # Check if parts[1] is a digit (index)
+                if parts[1].isdigit():
+                    index = int(parts[1])
+                    field = parts[2]
 
-                if field == 'thickness' and 0 <= index < len(new_geometry.beams):
-                    new_geometry.beams[index].thickness = param_value
+                    if field == 'thickness' and 0 <= index < len(new_geometry.beams):
+                        new_geometry.beams[index].thickness = param_value
 
         return new_geometry
 
