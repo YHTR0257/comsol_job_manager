@@ -90,6 +90,8 @@ def check_execution_results(job_dir: Path) -> dict:
         'results_dir_exists': results_dir.exists(),
         'log_file': None,
         'output_file': None,
+        'gif_files': [],
+        'result_txt_files': [],
         'error_files': [],
         'all_files': []
     }
@@ -134,6 +136,22 @@ def check_execution_results(job_dir: Path) -> dict:
         logger.info(f"    Size: {mph_files[0].stat().st_size:,} bytes")
     else:
         logger.warning("  ✗ No .mph output file found")
+
+    # Check for GIF animation files
+    gif_files = list(results_dir.glob("*.gif"))
+    if gif_files:
+        result_status['gif_files'] = gif_files
+        logger.info(f"  ✓ Found {len(gif_files)} GIF animation file(s):")
+        for gif_file in sorted(gif_files):
+            logger.info(f"    - {gif_file.name} ({gif_file.stat().st_size:,} bytes)")
+
+    # Check for result text files (kirchhoff, maxmises)
+    txt_files = list(results_dir.glob("*kirchhoff.txt")) + list(results_dir.glob("*maxmises.txt"))
+    if txt_files:
+        result_status['result_txt_files'] = txt_files
+        logger.info(f"  ✓ Found {len(txt_files)} result text file(s):")
+        for txt_file in sorted(txt_files):
+            logger.info(f"    - {txt_file.name} ({txt_file.stat().st_size:,} bytes)")
 
     # Check for error files
     error_patterns = ['*.err', 'error*.txt', '*_error.log']
@@ -225,16 +243,25 @@ def execute_single_job(job_dir: Path, timeout: int = 3600,
         logger.info("=" * 60)
         result_status = check_execution_results(job_dir)
 
-        # Determine success
+        # Determine success based on kirchhoff.txt existence
+        # A successful COMSOL job should generate kirchhoff.txt as the final output
+        has_kirchhoff = any('kirchhoff.txt' in str(f) for f in result_status.get('result_txt_files', []))
+
         success = (
             result.returncode == 0 and
-            result_status['log_file'] is not None
+            has_kirchhoff
         )
 
         if success:
             logger.info("✓ Job execution completed successfully")
+            logger.info("  - Exit code: 0")
+            logger.info("  - Kirchhoff stress file generated")
         else:
             logger.error("✗ Job execution failed or incomplete")
+            if result.returncode != 0:
+                logger.error(f"  - Exit code: {result.returncode}")
+            if not has_kirchhoff:
+                logger.error("  - Kirchhoff stress file not found (job may have failed)")
 
         return success
 

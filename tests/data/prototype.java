@@ -24,7 +24,7 @@ import java.io.PrintWriter;
  * @version 2.2
  * @since 2024-12-11
  */
-public class Job1207 {
+public class Job001 {
 
     /** Debug log writer for detailed execution tracking */
     private static PrintWriter debugLog = null;
@@ -72,19 +72,20 @@ public class Job1207 {
      * @return the configured and solved COMSOL model
      */
     public static Model run() {
-        String file = "job_1207";
+        String file = "job_001";
         log("=== COMSOL Job Starting ===");
 
         Model model = null;
         File projectRoot = null;
         File resultPath = null;
         double[] uni_size = null;
-        double delta_ = 0.01;  // Maximum strain = 1% (delta * disp_max = 0.01 * 1 = 0.01)
+        double delta_ = 0.01;
         String[] dstep = new String[]{"0, 0.25, 0.5, 0.75, 1"};
-        double pratio = 0.0;
+        double poissonRatio = 0.0;
+        double youngModulus = 10000000.0;
+        double density = 950.0;
         double lconst = 15.0;
-        double rs = 1.0;  // 100./100. = 1.0 (matching ref.java)
-        double rb = 0.25; // 25./100. = 0.25 (matching ref.java)
+        double rs = 1.0;
         String[] strainParams = null;
 
         try {
@@ -97,26 +98,76 @@ public class Job1207 {
                 log("Created result directory: " + resultPath.getAbsolutePath());
             }
         } catch (Exception e) {
-            log("ERROR in project setup: " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in project setup: " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed to setup project directories", e);
         }
 
         double[][] points = null;
         double[][][] lines = null;
+        double[] beamThicknesses = null;
 
         try {
-            // Hardcoded geometry data (matching ref.java format)
-            log("STEP 1: Setting up hardcoded geometry data");
-            points = createHardcodedSpheres(lconst);
-            lines = createHardcodedBeams(points);
+            // Geometry data from template
+            log("STEP 1: Setting up geometry data");
+
+            // Sphere positions [n][3] where each row is [x, y, z]
+            points = new double[][]{
+                {0.0, 0.0, 0.0},  // sphere_001
+                {0.0, 0.0, 15.0},  // sphere_002
+                {0.0, 15.0, 0.0},  // sphere_003
+                {0.0, 15.0, 15.0},  // sphere_004
+                {15.0, 0.0, 0.0},  // sphere_005
+                {15.0, 0.0, 15.0},  // sphere_006
+                {15.0, 15.0, 0.0},  // sphere_007
+                {15.0, 15.0, 15.0}  // sphere_008
+            };
+
+            // Beam endpoints [n][2][3] where each beam is [[x1,y1,z1], [x2,y2,z2]]
+            lines = new double[][][]{
+                {points[0], points[2]},  // beam_001
+                {points[0], points[4]},  // beam_002
+                {points[2], points[6]},  // beam_003
+                {points[4], points[6]},  // beam_004
+                {points[1], points[3]},  // beam_005
+                {points[1], points[5]},  // beam_006
+                {points[3], points[7]},  // beam_007
+                {points[5], points[7]},  // beam_008
+                {points[0], points[1]},  // beam_009
+                {points[2], points[3]},  // beam_010
+                {points[4], points[5]},  // beam_011
+                {points[6], points[7]}  // beam_012
+            };
+
             log("Using " + points.length + " spheres and " + lines.length + " beams");
 
-            // Unit cell size (matching ref.java with lconst = 15.0)
-            uni_size = new double[]{lconst, lconst, lconst};
+            // Unit cell size
+            uni_size = new double[]{15.0, 15.0, 15.0};
+
+            // Beam thicknesses (diameter) for each beam
+            beamThicknesses = new double[]{
+                0.5,  // beam_001
+                0.5,  // beam_002
+                0.5,  // beam_003
+                0.5,  // beam_004
+                0.5,  // beam_005
+                0.5,  // beam_006
+                0.5,  // beam_007
+                0.5,  // beam_008
+                0.5,  // beam_009
+                0.5,  // beam_010
+                0.5,  // beam_011
+                0.5  // beam_012
+            };
         } catch (Exception e) {
-            log("ERROR in STEP 1 (Setting up geometry data): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 1 (Setting up geometry data): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 1", e);
         }
 
@@ -127,18 +178,24 @@ public class Job1207 {
             model.label(file + ".mph");
             log("Model created: " + file);
         } catch (Exception e) {
-            log("ERROR in STEP 2 (Creating model): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 2 (Creating model): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 2", e);
         }
 
         try {
             log("STEP 3: Setting parameters");
-            setupParameters(model, uni_size, lconst, rs, rb, delta_);
+            setupParameters(model, uni_size, lconst, rs, delta_);
             log("Parameters configured");
         } catch (Exception e) {
-            log("ERROR in STEP 3 (Setting parameters): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 3 (Setting parameters): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 3", e);
         }
 
@@ -146,8 +203,11 @@ public class Job1207 {
             log("STEP 4: Creating component");
             model.component().create("comp1", true);
         } catch (Exception e) {
-            log("ERROR in STEP 4 (Creating component): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 4 (Creating component): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 4", e);
         }
 
@@ -156,18 +216,24 @@ public class Job1207 {
             createResultTables(model);
             log("Result tables created");
         } catch (Exception e) {
-            log("ERROR in STEP 5 (Creating result tables): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 5 (Creating result tables): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 5", e);
         }
 
         try {
             log("STEP 6: Creating geometry");
-            model = geometry(model, uni_size, points, lines);
+            model = geometry(model, uni_size, points, lines, beamThicknesses);
             log("Geometry created successfully");
         } catch (Exception e) {
-            log("ERROR in STEP 6 (Creating geometry): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 6 (Creating geometry): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 6", e);
         }
 
@@ -176,8 +242,11 @@ public class Job1207 {
             createProbes(model);
             log("Probes created");
         } catch (Exception e) {
-            log("ERROR in STEP 7 (Creating probes): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 7 (Creating probes): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 7", e);
         }
 
@@ -186,16 +255,22 @@ public class Job1207 {
             setupCouplingOperators(model);
             log("Coupling operators configured");
         } catch (Exception e) {
-            log("ERROR in STEP 8 (Setting up coupling operators): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 8 (Setting up coupling operators): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 8", e);
         }
 
         try {
             model.component("comp1").coordSystem("sys1").label("Boundary System 1");
         } catch (Exception e) {
-            log("ERROR in coordSystem labeling: " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in coordSystem labeling: " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed to label coordinate system", e);
         }
 
@@ -204,18 +279,24 @@ public class Job1207 {
             createMesh(model);
             log("Mesh created successfully");
         } catch (Exception e) {
-            log("ERROR in STEP 9 (Creating mesh): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 9 (Creating mesh): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 9", e);
         }
 
         try {
             log("STEP 10: Setting up material");
-            setupMaterial(model, pratio);
+            setupMaterial(model, poissonRatio, youngModulus, density);
             log("Material configured");
         } catch (Exception e) {
-            log("ERROR in STEP 10 (Setting up material): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 10 (Setting up material): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 10", e);
         }
 
@@ -224,8 +305,11 @@ public class Job1207 {
             setupPhysics(model);
             log("Physics configured");
         } catch (Exception e) {
-            log("ERROR in STEP 11 (Setting up physics): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 11 (Setting up physics): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 11", e);
         }
 
@@ -234,8 +318,11 @@ public class Job1207 {
             configureProbes(model);
             log("Probes configured");
         } catch (Exception e) {
-            log("ERROR in STEP 12 (Configuring probes): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 12 (Configuring probes): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 12", e);
         }
 
@@ -244,8 +331,11 @@ public class Job1207 {
             createStudy(model);
             log("Study created");
         } catch (Exception e) {
-            log("ERROR in STEP 13 (Creating study): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 13 (Creating study): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 13", e);
         }
 
@@ -254,8 +344,11 @@ public class Job1207 {
             createBatchJob(model);
             log("Batch job created");
         } catch (Exception e) {
-            log("ERROR in STEP 14 (Creating batch job): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 14 (Creating batch job): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 14", e);
         }
 
@@ -264,8 +357,11 @@ public class Job1207 {
             setupResultDatasets(model);
             log("Result datasets configured");
         } catch (Exception e) {
-            log("ERROR in STEP 15 (Setting up result datasets): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 15 (Setting up result datasets): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 15", e);
         }
 
@@ -274,8 +370,11 @@ public class Job1207 {
             strainParams = setupStudyParameters(model, delta_, dstep);
             log("Study parameters configured");
         } catch (Exception e) {
-            log("ERROR in STEP 16 (Configuring study parameters): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 16 (Configuring study parameters): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 16", e);
         }
 
@@ -284,8 +383,11 @@ public class Job1207 {
             runBatchJob(model, strainParams);
             log("Batch job execution started");
         } catch (Exception e) {
-            log("ERROR in STEP 17 (Running batch job): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 17 (Running batch job): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 17", e);
         }
 
@@ -294,18 +396,24 @@ public class Job1207 {
             processResults(model, resultPath, file);
             log("Results processed");
         } catch (Exception e) {
-            log("ERROR in STEP 18 (Processing results): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 18 (Processing results): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 18", e);
         }
 
         try {
             log("STEP 19: Creating visualization");
-            createVisualization(model);
+            createVisualization(model, resultPath, file);
             log("Visualization created");
         } catch (Exception e) {
-            log("ERROR in STEP 19 (Creating visualization): " + e.getMessage());
-            e.printStackTrace();
+            String errorMsg = "ERROR in STEP 19 (Creating visualization): " + e.getMessage();
+            logError(errorMsg);
+            if (debugLog != null) {
+                e.printStackTrace(debugLog);
+            }
             throw new RuntimeException("Failed at STEP 19", e);
         }
 
@@ -318,11 +426,10 @@ public class Job1207 {
      *
      * @param model the COMSOL model
      * @param uni_size unit cell dimensions [Lx, Ly, Lz]
-     * @param rs sphere radius
-     * @param rb beam radius
+     * @param rs sphere radius (default)
      * @param delta_ delta parameter for strain
      */
-    private static void setupParameters(Model model, double[] uni_size, double lconst, double rs, double rb, double delta_) {
+    private static void setupParameters(Model model, double[] uni_size, double lconst, double rs, double delta_) {
         log("  Setting unit cell dimensions: Lx=" + uni_size[0] + ", Ly=" + uni_size[1] + ", Lz=" + uni_size[2]);
         model.param().set("disp", "0");
         model.param().set("Lx", uni_size[0] + "[mm]");
@@ -330,9 +437,8 @@ public class Job1207 {
         model.param().set("Lz", uni_size[2] + "[mm]");
         model.param().set("lconst", lconst + "[mm]");
 
-        log("  Setting radii: Rs=" + rs + ", Rb=" + rb);
+        log("  Setting default sphere radius: Rs=" + rs);
         model.param().set("Rs", rs);
-        model.param().set("Rb", rb);
 
         log("  Setting strain tensor components (identity)");
         model.param().set("E11", 1);
@@ -355,14 +461,14 @@ public class Job1207 {
      * @param model the COMSOL model
      */
     private static void createResultTables(Model model) {
-        int ttt = 3;
-        for (int i = 1; i < ttt; i++) {
+        int numStrainCases = 6;  // Number of parametric strain cases in batch job (e11, e22, e33, e23, e31, e12)
+        for (int i = 1; i <= numStrainCases; i++) {
             model.result().table().create("tbl" + i, "Table");
             model.result().table("tbl" + i).label("Maximum mises stress " + i);
         }
-        model.result().table().create("tbl" + ttt, "Table");
-        model.result().table("tbl" + ttt).label("Probe Table");
-        log("  Created " + ttt + " result tables");
+        model.result().table().create("tbl" + (numStrainCases + 1), "Table");
+        model.result().table("tbl" + (numStrainCases + 1)).label("Probe Table");
+        log("  Created " + (numStrainCases + 1) + " result tables (tbl1-tbl" + (numStrainCases + 1) + ")");
     }
 
     /**
@@ -380,9 +486,10 @@ public class Job1207 {
      * @param uni_size unit cell dimensions
      * @param points array of sphere positions [n][3]
      * @param lines array of beam lines [n][2][3] (matching ref.java select_bonds format)
+     * @param beamThicknesses array of beam thicknesses (diameter) for each beam
      * @return the model with geometry created
      */
-    public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines) {
+    public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines, double[] beamThicknesses) {
         log("  Creating geometry sequence");
         model.component("comp1").geom().create("geom1", 3);
         model.component("comp1").geom("geom1").lengthUnit("mm");
@@ -395,7 +502,7 @@ public class Job1207 {
         // Create beams using Sweep method (matching ref.java)
         log("  Creating " + lines.length + " beams using Sweep method");
         int numBeams = lines.length;
-        createBeams(model, lines, numSpheres);
+        createBeams(model, lines, beamThicknesses, numSpheres);
 
         // Create blocks and difference operations (matching ref.java)
         log("  Creating blocks and difference operations");
@@ -457,14 +564,16 @@ public class Job1207 {
      *
      * @param model the COMSOL model
      * @param lines array of beam lines [n][2][3] where each beam is [[x1,y1,z1], [x2,y2,z2]]
+     * @param beamThicknesses array of beam thicknesses (diameter) for each beam
      * @param i number of spheres (for positioning union operation)
      */
-    private static void createBeams(Model model, double[][][] lines, int i) {
+    private static void createBeams(Model model, double[][][] lines, double[] beamThicknesses, int i) {
         int j = 0;
 
         for (double[][] l : lines) {
             double[] coord1 = l[0];
             double[] coord2 = l[1];
+            double beamRadius = beamThicknesses[j] / 2.0;  // Convert thickness (diameter) to radius
 
             double[] ln = new double[3];
             for (int k = 0; k < 3; k++) {
@@ -487,9 +596,9 @@ public class Job1207 {
             model.component("comp1").geom("geom1").feature(wp).set("normalvector", ln);
             model.component("comp1").geom("geom1").feature(wp).set("normalcoord", coord1);
 
-            // Create Circle on WorkPlane
+            // Create Circle on WorkPlane with beam-specific radius
             model.component("comp1").geom("geom1").feature(wp).geom().create("c1", "Circle");
-            model.component("comp1").geom("geom1").feature(wp).geom().feature("c1").set("r", "Rb");
+            model.component("comp1").geom("geom1").feature(wp).geom().feature("c1").set("r", beamRadius);
 
             // Create Sweep
             String swp = "swp" + j;
@@ -730,14 +839,16 @@ public class Job1207 {
      * Sets up material properties.
      *
      * @param model the COMSOL model
-     * @param pratio Poisson's ratio
+     * @param poissonRatio Poisson's ratio
+     * @param youngModulus Young's modulus (Pa)
+     * @param density Density (kg/m³)
      */
-    private static void setupMaterial(Model model, double pratio) {
+    private static void setupMaterial(Model model, double poissonRatio, double youngModulus, double density) {
         model.component("comp1").material().create("mat1", "Common");
-        model.component("comp1").material("mat1").propertyGroup("def").set("density", "950");
-        model.component("comp1").material("mat1").propertyGroup("def").set("poissonsratio", pratio + "-eps");
-        model.component("comp1").material("mat1").propertyGroup("def").set("youngsmodulus", "10[MPa]");
-        log("  Material properties: density=950, poissonsratio=" + pratio + ", youngsmodulus=10MPa");
+        model.component("comp1").material("mat1").propertyGroup("def").set("density", String.valueOf(density));
+        model.component("comp1").material("mat1").propertyGroup("def").set("poissonsratio", poissonRatio + "-eps");
+        model.component("comp1").material("mat1").propertyGroup("def").set("youngsmodulus", youngModulus + "[Pa]");
+        log("  Material properties: density=" + density + " kg/m³, poisson's ratio=" + poissonRatio + ", young's modulus=" + youngModulus + " Pa");
     }
 
     /**
@@ -809,6 +920,9 @@ public class Job1207 {
      * @param model the COMSOL model
      */
     private static void configureProbes(Model model) {
+        int numStrainCases = 6;  // Number of parametric strain cases in batch job (e11, e22, e33, e23, e31, e12)
+        String probeTableTag = "tbl" + (numStrainCases + 1);  // tbl7 is the Probe Table
+
         String[][] probeConfig = {
             {"dom1", "P11", "-solid.PxX"},
             {"dom2", "P21", "-solid.PyX"},
@@ -826,11 +940,11 @@ public class Job1207 {
             model.component("comp1").probe(cfg[0]).set("probename", cfg[1]);
             model.component("comp1").probe(cfg[0]).set("expr", cfg[2]);
             model.component("comp1").probe(cfg[0]).set("unit", "MPa");
-            model.component("comp1").probe(cfg[0]).set("table", "tbl3");
+            model.component("comp1").probe(cfg[0]).set("table", probeTableTag);
             model.component("comp1").probe(cfg[0]).set("window", "window1");
         }
 
-        log("  Configured 9 stress tensor probes (P11-P33)");
+        log("  Configured 9 stress tensor probes (P11-P33) using " + probeTableTag);
     }
 
     /**
@@ -881,12 +995,12 @@ public class Job1207 {
      * @param model the COMSOL model
      */
     private static void setupResultDatasets(Model model) {
-        int ttt = 3;
+        int numStrainCases = 6;  // Number of parametric strain cases in batch job (e11, e22, e33, e23, e31, e12)
 
         model.result().dataset("dset1").set("probetag", "dom9");
         model.result().dataset().create("dset3", "Solution");
 
-        for (int i = 1; i < ttt; i++) {
+        for (int i = 1; i <= numStrainCases; i++) {
             String dset = "dset" + (i + 3);
             model.result().dataset().create(dset, "Solution");
             model.result().numerical().create("gev" + i, "EvalGlobal");
@@ -930,24 +1044,52 @@ public class Job1207 {
         // We need 6 independent strain states to determine C11, C12, C44
         // Note: Voigt notation - (e11, e22, e33, e23, e13, e12)
         //
-        // Batch parametric sweep will apply 9 strain states:
+        // Batch parametric sweep will apply 6 strain states:
         // 1-3: Normal strains (e11, e22, e33) - for C11, C12
-        // 4-9: Shear strains (e23, e13, e12) - for C44
+        // 4-6: Shear strains (e23, e13, e12) - for C44
+
+        // Define rotation matrix (matching ref.java)
+        String direc = "100";
+        double[][] rotate = new double[3][3];
+        if (direc.equals("111")) {
+            rotate = new double[][]{
+                {-1., 1., 0.},
+                {-1., -1., 2.},
+                {1., 1., 1.}
+            };
+        } else if (direc.equals("100")) {
+            rotate = new double[][]{
+                {1., 0., 0.},
+                {0., 1., 0.},
+                {0., 0., 1.}
+            };
+        }
+
+        double[][] rotate1 = unitTensor(rotate);
+        double[][] rotate1_ = transpose(rotate1);
+
+        // Calculate rotated strain tensors (matching ref.java lines 386-391)
+        double[][] e11_ = rot(rotate1, rot(new double[][]{{1, 0, 0}, {0, 0, 0}, {0, 0, 0}}, rotate1_));
+        double[][] e22_ = rot(rotate1, rot(new double[][]{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, rotate1_));
+        double[][] e33_ = rot(rotate1, rot(new double[][]{{0, 0, 0}, {0, 0, 0}, {0, 0, 1}}, rotate1_));
+        double[][] e23_ = rot(rotate1, rot(new double[][]{{0, 0, 0}, {0, 0, 0.5}, {0, 0.5, 0}}, rotate1_));
+        double[][] e31_ = rot(rotate1, rot(new double[][]{{0, 0, 0.5}, {0, 0, 0}, {0.5, 0, 0}}, rotate1_));
+        double[][] e12_ = rot(rotate1, rot(new double[][]{{0, 0.5, 0}, {0.5, 0, 0}, {0, 0, 0}}, rotate1_));
 
         String ddd = "*delta ";
         String dd = "*delta";
 
-        // These define the parametric sweep expressions
-        // Each E_ij component will vary according to the strain tensor being applied
-        String e11 = "1.0" + ddd;  // Will be modified by batch job for each strain state
-        String e21 = "0.0" + ddd;
-        String e31 = "0.0" + ddd;
-        String e12 = "0.0" + ddd;
-        String e22 = "1.0" + ddd;  // Will be modified by batch job for each strain state
-        String e32 = "0.0" + ddd;
-        String e13 = "0.0" + ddd;
-        String e23 = "0.0" + ddd;
-        String e33 = "1.0" + ddd;  // Will be modified by batch job for each strain state
+        // Build parametric sweep expressions (matching ref.java lines 395-403)
+        // Each expression sums contributions from all 6 strain tensors
+        String e11 = e11_[0][0] + ddd + e22_[0][0] + ddd + e33_[0][0] + ddd + e23_[0][0] + ddd + e31_[0][0] + ddd + e12_[0][0] + ddd;
+        String e21 = e11_[0][1] + ddd + e22_[0][1] + ddd + e33_[0][1] + ddd + e23_[0][1] + ddd + e31_[0][1] + ddd + e12_[0][1] + ddd;
+        String e31 = e11_[0][2] + ddd + e22_[0][2] + ddd + e33_[0][2] + ddd + e23_[0][2] + ddd + e31_[0][2] + ddd + e12_[0][2] + ddd;
+        String e12 = e11_[1][0] + ddd + e22_[1][0] + ddd + e33_[1][0] + ddd + e23_[1][0] + ddd + e31_[1][0] + ddd + e12_[1][0] + ddd;
+        String e22 = e11_[1][1] + ddd + e22_[1][1] + ddd + e33_[1][1] + ddd + e23_[1][1] + ddd + e31_[1][1] + ddd + e12_[1][1] + ddd;
+        String e32 = e11_[1][2] + ddd + e22_[1][2] + ddd + e33_[1][2] + ddd + e23_[1][2] + ddd + e31_[1][2] + ddd + e12_[1][2] + ddd;
+        String e13 = e11_[2][0] + ddd + e22_[2][0] + ddd + e33_[2][0] + ddd + e23_[2][0] + ddd + e31_[2][0] + ddd + e12_[2][0] + ddd;
+        String e23 = e11_[2][1] + ddd + e22_[2][1] + ddd + e33_[2][1] + ddd + e23_[2][1] + ddd + e31_[2][1] + ddd + e12_[2][1] + ddd;
+        String e33 = e11_[2][2] + ddd + e22_[2][2] + ddd + e33_[2][2] + ddd + e23_[2][2] + ddd + e31_[2][2] + ddd + e12_[2][2] + ddd;
 
         // Study setup
         model.study("std1").label("Study 1");
@@ -985,20 +1127,56 @@ public class Job1207 {
 
         log("  Study parameters configured for strain sweep");
 
-        return new String[]{e11, e21, e31, e12, e22, e32, e13, e23, e33, dd};
+        // Return strain parameters: e11-e33 strings, dd, and 6 strain tensor matrices (flattened)
+        // Format: [e11, e21, e31, e12, e22, e32, e13, e23, e33, dd, e11_[0][0-2], e11_[1][0-2], e11_[2][0-2], ...]
+        return new String[]{
+            e11, e21, e31, e12, e22, e32, e13, e23, e33, dd,
+            // e11_ tensor (3x3 = 9 elements)
+            String.valueOf(e11_[0][0]), String.valueOf(e11_[0][1]), String.valueOf(e11_[0][2]),
+            String.valueOf(e11_[1][0]), String.valueOf(e11_[1][1]), String.valueOf(e11_[1][2]),
+            String.valueOf(e11_[2][0]), String.valueOf(e11_[2][1]), String.valueOf(e11_[2][2]),
+            // e22_ tensor
+            String.valueOf(e22_[0][0]), String.valueOf(e22_[0][1]), String.valueOf(e22_[0][2]),
+            String.valueOf(e22_[1][0]), String.valueOf(e22_[1][1]), String.valueOf(e22_[1][2]),
+            String.valueOf(e22_[2][0]), String.valueOf(e22_[2][1]), String.valueOf(e22_[2][2]),
+            // e33_ tensor
+            String.valueOf(e33_[0][0]), String.valueOf(e33_[0][1]), String.valueOf(e33_[0][2]),
+            String.valueOf(e33_[1][0]), String.valueOf(e33_[1][1]), String.valueOf(e33_[1][2]),
+            String.valueOf(e33_[2][0]), String.valueOf(e33_[2][1]), String.valueOf(e33_[2][2]),
+            // e23_ tensor
+            String.valueOf(e23_[0][0]), String.valueOf(e23_[0][1]), String.valueOf(e23_[0][2]),
+            String.valueOf(e23_[1][0]), String.valueOf(e23_[1][1]), String.valueOf(e23_[1][2]),
+            String.valueOf(e23_[2][0]), String.valueOf(e23_[2][1]), String.valueOf(e23_[2][2]),
+            // e31_ tensor
+            String.valueOf(e31_[0][0]), String.valueOf(e31_[0][1]), String.valueOf(e31_[0][2]),
+            String.valueOf(e31_[1][0]), String.valueOf(e31_[1][1]), String.valueOf(e31_[1][2]),
+            String.valueOf(e31_[2][0]), String.valueOf(e31_[2][1]), String.valueOf(e31_[2][2]),
+            // e12_ tensor
+            String.valueOf(e12_[0][0]), String.valueOf(e12_[0][1]), String.valueOf(e12_[0][2]),
+            String.valueOf(e12_[1][0]), String.valueOf(e12_[1][1]), String.valueOf(e12_[1][2]),
+            String.valueOf(e12_[2][0]), String.valueOf(e12_[2][1]), String.valueOf(e12_[2][2])
+        };
     }
 
     /**
      * Runs the batch job with parametric sweep.
      *
      * @param model the COMSOL model
-     * @param strainParams strain parameter strings (e11-e33, dd)
+     * @param strainParams strain parameter strings (e11-e33, dd, e11_-e12_ tensors)
      */
     private static void runBatchJob(Model model, String[] strainParams) {
         String e11 = strainParams[0], e21 = strainParams[1], e31 = strainParams[2];
         String e12 = strainParams[3], e22 = strainParams[4], e32 = strainParams[5];
         String e13 = strainParams[6], e23 = strainParams[7], e33 = strainParams[8];
         String dd = strainParams[9];
+
+        // Extract strain tensor matrices from strainParams
+        double[][] e11_ = parseMatrix(strainParams, 10);
+        double[][] e22_ = parseMatrix(strainParams, 13);
+        double[][] e33_ = parseMatrix(strainParams, 16);
+        double[][] e23_ = parseMatrix(strainParams, 19);
+        double[][] e31_ = parseMatrix(strainParams, 22);
+        double[][] e12_ = parseMatrix(strainParams, 25);
 
         model.batch("p1").set("control", "param");
         model.batch("p1").set("pname", new String[]{"E11", "E21", "E31", "E12", "E22", "E32", "E13", "E23", "E33"});
@@ -1009,32 +1187,27 @@ public class Job1207 {
         model.batch("p1").feature("so1").set("seq", "sol1");
         model.batch("p1").feature("so1").set("psol", "sol2");
 
-        // Define 9 strain states for cubic crystal elastic constant measurement:
-        // Cases 1-3: e11, e22, e33 (normal strains) - diagonal components
-        // Cases 4-6: e23, e13, e12 (shear strains) - off-diagonal components
-        // Cases 7-9: Additional shear components for symmetry verification
+        // Define 6 strain states for cubic crystal elastic constant measurement (matching ref.java lines 463-471):
+        // Cases 1-3: e11, e22, e33 (normal strains) - for measuring C11, C12
+        // Cases 4-6: e23, e31, e12 (shear strains) - for measuring C44
         model.batch("p1").feature("so1")
              .set("param", new String[]{
-                 // Case 1: e11 = delta (axial strain in x-direction)
-                 "\"E11\",\"1.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
-                 // Case 2: e22 = delta (axial strain in y-direction)
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"1.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
-                 // Case 3: e33 = delta (axial strain in z-direction)
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"1.0" + dd + "\"",
-                 // Case 4: e23 = delta/2 (shear strain in yz-plane) - engineering strain = delta
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.5" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.5" + dd + "\",\"E33\",\"0.0" + dd + "\"",
-                 // Case 5: e13 = delta/2 (shear strain in xz-plane) - engineering strain = delta
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.5" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.5" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
-                 // Case 6: e12 = delta/2 (shear strain in xy-plane) - engineering strain = delta
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.5" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.5" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
-                 // Cases 7-9: Combined states for verification (optional, can be removed if not needed)
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\"",
-                 "\"E11\",\"0.0" + dd + "\",\"E21\",\"0.0" + dd + "\",\"E31\",\"0.0" + dd + "\",\"E12\",\"0.0" + dd + "\",\"E22\",\"0.0" + dd + "\",\"E32\",\"0.0" + dd + "\",\"E13\",\"0.0" + dd + "\",\"E23\",\"0.0" + dd + "\",\"E33\",\"0.0" + dd + "\""
+                 // Case 1: Apply e11 strain tensor (matching ref.java line 463)
+                 "\"E11\",\"" + e11_[0][0] + dd + "\",\"E21\",\"" + e11_[0][1] + dd + "\",\"E31\",\"" + e11_[0][2] + dd + "\",\"E12\",\"" + e11_[1][0] + dd + "\",\"E22\",\"" + e11_[1][1] + dd + "\",\"E32\",\"" + e11_[1][2] + dd + "\",\"E13\",\"" + e11_[2][0] + dd + "\",\"E23\",\"" + e11_[2][1] + dd + "\",\"E33\",\"" + e11_[2][2] + dd + "\"",
+                 // Case 2: Apply e22 strain tensor (matching ref.java line 464)
+                 "\"E11\",\"" + e22_[0][0] + dd + "\",\"E21\",\"" + e22_[0][1] + dd + "\",\"E31\",\"" + e22_[0][2] + dd + "\",\"E12\",\"" + e22_[1][0] + dd + "\",\"E22\",\"" + e22_[1][1] + dd + "\",\"E32\",\"" + e22_[1][2] + dd + "\",\"E13\",\"" + e22_[2][0] + dd + "\",\"E23\",\"" + e22_[2][1] + dd + "\",\"E33\",\"" + e22_[2][2] + dd + "\"",
+                 // Case 3: Apply e33 strain tensor (matching ref.java line 465)
+                 "\"E11\",\"" + e33_[0][0] + dd + "\",\"E21\",\"" + e33_[0][1] + dd + "\",\"E31\",\"" + e33_[0][2] + dd + "\",\"E12\",\"" + e33_[1][0] + dd + "\",\"E22\",\"" + e33_[1][1] + dd + "\",\"E32\",\"" + e33_[1][2] + dd + "\",\"E13\",\"" + e33_[2][0] + dd + "\",\"E23\",\"" + e33_[2][1] + dd + "\",\"E33\",\"" + e33_[2][2] + dd + "\"",
+                 // Case 4: Apply e23 strain tensor (matching ref.java line 466)
+                 "\"E11\",\"" + e23_[0][0] + dd + "\",\"E21\",\"" + e23_[0][1] + dd + "\",\"E31\",\"" + e23_[0][2] + dd + "\",\"E12\",\"" + e23_[1][0] + dd + "\",\"E22\",\"" + e23_[1][1] + dd + "\",\"E32\",\"" + e23_[1][2] + dd + "\",\"E13\",\"" + e23_[2][0] + dd + "\",\"E23\",\"" + e23_[2][1] + dd + "\",\"E33\",\"" + e23_[2][2] + dd + "\"",
+                 // Case 5: Apply e31 strain tensor (matching ref.java line 467)
+                 "\"E11\",\"" + e31_[0][0] + dd + "\",\"E21\",\"" + e31_[0][1] + dd + "\",\"E31\",\"" + e31_[0][2] + dd + "\",\"E12\",\"" + e31_[1][0] + dd + "\",\"E22\",\"" + e31_[1][1] + dd + "\",\"E32\",\"" + e31_[1][2] + dd + "\",\"E13\",\"" + e31_[2][0] + dd + "\",\"E23\",\"" + e31_[2][1] + dd + "\",\"E33\",\"" + e31_[2][2] + dd + "\"",
+                 // Case 6: Apply e12 strain tensor (matching ref.java line 468)
+                 "\"E11\",\"" + e12_[0][0] + dd + "\",\"E21\",\"" + e12_[0][1] + dd + "\",\"E31\",\"" + e12_[0][2] + dd + "\",\"E12\",\"" + e12_[1][0] + dd + "\",\"E22\",\"" + e12_[1][1] + dd + "\",\"E32\",\"" + e12_[1][2] + dd + "\",\"E13\",\"" + e12_[2][0] + dd + "\",\"E23\",\"" + e12_[2][1] + dd + "\",\"E33\",\"" + e12_[2][2] + dd + "\""
              });
         model.batch("p1").attach("std1");
 
-        log("  Executing batch job...");
+        log("  Executing batch job with 6 independent strain states...");
         model.batch("p1").run();
         log("  Batch job completed");
     }
@@ -1047,7 +1220,7 @@ public class Job1207 {
      * @param file base filename for exports
      */
     private static void processResults(Model model, File resultPath, String file) {
-        int ttt = 3;
+        int numStrainCases = 6;  // Number of parametric strain cases in batch job (e11, e22, e33, e23, e31, e12)
 
         model.result().dataset("dset2").set("probetag", "sol1");
         model.result().dataset("dset3").set("probetag", "sol2");
@@ -1091,11 +1264,13 @@ public class Job1207 {
         }
 
         // Export Kirchhoff stress
+        // Note: tbl1-tbl9 are for Maximum mises stress, tbl10 is Probe Table
+        // So we use tbl11 for Kirchhoff stress
         model.result().numerical().create("pev10", "EvalPoint");
         model.result().numerical("pev10").set("data", "av1");
-        model.result().table().create("tbl" + (ttt + 1), "Table");
-        model.result().table("tbl" + (ttt + 1)).set("tablebuffersize", 1000000);
-        model.result().table("tbl" + (ttt + 1)).comments("Engineering Stress");
+        model.result().table().create("tbl" + (numStrainCases + 2), "Table");
+        model.result().table("tbl" + (numStrainCases + 2)).set("tablebuffersize", 1000000);
+        model.result().table("tbl" + (numStrainCases + 2)).comments("Engineering Stress");
 
         for (int i = 0; i < 9; i++) {
             String[] exprs = {"-solid.PxX", "-solid.PyX", "-solid.PzX", "-solid.PxY", "-solid.PyY", "-solid.PzY", "-solid.PxZ", "-solid.PyZ", "-solid.PzZ"};
@@ -1103,10 +1278,10 @@ public class Job1207 {
             model.result().numerical("pev10").setIndex("unit", "MPa", i);
         }
 
-        model.result().numerical("pev10").set("table", "tbl" + (ttt + 1));
+        model.result().numerical("pev10").set("table", "tbl" + (numStrainCases + 2));
         model.result().numerical("pev10").setResult();
-        model.result().table("tbl" + (ttt + 1)).set("storetable", "inmodel");
-        model.result().export().create("table1", "tbl" + (ttt + 1), "Table");
+        model.result().table("tbl" + (numStrainCases + 2)).set("storetable", "inmodel");
+        model.result().export().create("table1", "tbl" + (numStrainCases + 2), "Table");
         model.result().export("table1")
              .set("filename", new File(resultPath, file + "_kirchhoff.txt").getAbsolutePath());
         model.result().export("table1").run();
@@ -1121,64 +1296,53 @@ public class Job1207 {
         model.result().numerical("maxmises1").set("unit", new String[]{"MPa"});
         model.result().numerical("maxmises1").set("descr", new String[]{"Maximum von Mises stress"});
 
-        model.result().table().create("tbl" + (ttt + 2), "Table");
-        model.result().table("tbl" + (ttt + 2)).set("tablebuffersize", 10000000);
-        model.result().numerical("maxmises1").set("table", "tbl" + (ttt + 2));
+        model.result().table().create("tbl" + (numStrainCases + 3), "Table");
+        model.result().table("tbl" + (numStrainCases + 3)).set("tablebuffersize", 10000000);
+        model.result().numerical("maxmises1").set("table", "tbl" + (numStrainCases + 3));
         model.result().numerical("maxmises1").setResult();
 
-        model.result().table("tbl" + (ttt + 2)).set("storetable", "inmodel");
-        model.result().export().create("table2", "tbl" + (ttt + 2), "Table");
+        model.result().table("tbl" + (numStrainCases + 3)).set("storetable", "inmodel");
+        model.result().export().create("table2", "tbl" + (numStrainCases + 3), "Table");
         model.result().export("table2")
              .set("filename", new File(resultPath, file + "_maxmises.txt").getAbsolutePath());
         model.result().export("table2").run();
         log("  Exported max mises stress to " + file + "_maxmises.txt");
 
-        // Export animation as GIF
-        model.result().export().create("anim1", "Animation");
-        model.result().export("anim1").set("plotgroup", "pg2");  // Use stress visualization plot
-        model.result().export("anim1").set("movietype", "gif");
-        model.result().export("anim1").set("giffilename", new File(resultPath, file + "_animation.gif").getAbsolutePath());
-        model.result().export("anim1").run();
-        log("  Exported animation to " + file + "_animation.gif");
-
-        // Export static image as PNG
-        model.result().export().create("img1", "Image");
-        model.result().export("img1").set("plotgroup", "pg2");  // Use stress visualization plot
-        model.result().export("img1").set("imagetype", "png");
-        model.result().export("img1").set("pngfilename", new File(resultPath, file + "_stress.png").getAbsolutePath());
-        model.result().export("img1").run();
-        log("  Exported stress distribution image to " + file + "_stress.png");
     }
 
     /**
      * Creates visualization plot groups.
      *
      * @param model the COMSOL model
+     * @param resultPath path to result directory
+     * @param file base filename for exports
      */
-    private static void createVisualization(Model model) {
-        // Stress visualization
-        model.result().create("pg2", "PlotGroup3D");
-        model.result("pg2").set("data", "dset2");
-        model.result("pg2").create("surf1", "Surface");
-        model.result("pg2").feature("surf1").set("expr", "solid.mises");
-        model.result("pg2").feature("surf1").create("def", "Deform");
+    private static void createVisualization(Model model, File resultPath, String file) {
+        int numStrainCases = 6;  // Number of parametric strain cases in batch job (e11, e22, e33, e23, e31, e12)
 
-        model.result("pg2").label("応力 (solid)");
-        model.result("pg2").set("titletype", "custom");
-        model.result("pg2").set("typeintitle", false);
-        model.result("pg2").set("descriptionintitle", false);
-        model.result("pg2").set("expressionintitle", true);
-        model.result("pg2").set("showlegendsmaxmin", true);
-        model.result("pg2").feature("surf1").set("unit", "MPa");
-        model.result("pg2").feature("surf1")
+        // Create stress visualization plot group
+        model.result().create("pg_stress", "PlotGroup3D");
+        model.result("pg_stress").set("data", "dset2");
+        model.result("pg_stress").create("surf1", "Surface");
+        model.result("pg_stress").feature("surf1").set("expr", "solid.mises");
+        model.result("pg_stress").feature("surf1").create("def", "Deform");
+
+        model.result("pg_stress").label("Stress (solid)");
+        model.result("pg_stress").set("titletype", "custom");
+        model.result("pg_stress").set("typeintitle", false);
+        model.result("pg_stress").set("descriptionintitle", false);
+        model.result("pg_stress").set("expressionintitle", true);
+        model.result("pg_stress").set("showlegendsmaxmin", true);
+        model.result("pg_stress").feature("surf1").set("unit", "MPa");
+        model.result("pg_stress").feature("surf1")
              .set("const", new String[][]{{"solid.refpntx", "0", ""},
                                         {"solid.refpnty", "0", ""},
                                         {"solid.refpntz", "0", ""}});
-        model.result("pg2").feature("surf1").set("colortable", "RainbowLight");
-        model.result("pg2").feature("surf1").set("resolution", "normal");
-        model.result("pg2").feature("surf1").feature("def").set("scaleactive", true);
+        model.result("pg_stress").feature("surf1").set("colortable", "RainbowLight");
+        model.result("pg_stress").feature("surf1").set("resolution", "normal");
+        model.result("pg_stress").feature("surf1").feature("def").set("scaleactive", true);
 
-        // Probe plot
+        // Create probe plot group
         model.result().create("pg3", "PlotGroup1D");
         model.result("pg3").set("probetag", "window1");
         model.result("pg3").create("tblp1", "Table");
@@ -1191,7 +1355,52 @@ public class Job1207 {
         model.result("pg3").set("showsecyextra", false);
         model.result("pg3").set("window", "window1");
 
-        log("  Visualization plot groups created");
+        // Create animation export
+        model.result().export().create("anim1", "Animation");
+        model.result().export("anim1").set("plotgroup", "pg_stress");
+        model.result().export("anim1").set("target", "player");
+        model.result().export("anim1").set("synchronize", false);
+        model.result().export("anim1").set("fontsize", "9");
+        model.result().export("anim1").set("customcolor", new double[]{1, 1, 1});
+        model.result().export("anim1").set("background", "color");
+        model.result().export("anim1").set("gltfincludelines", "on");
+        model.result().export("anim1").set("title1d", "on");
+        model.result().export("anim1").set("legend1d", "on");
+        model.result().export("anim1").set("logo1d", "on");
+        model.result().export("anim1").set("options1d", "on");
+        model.result().export("anim1").set("title2d", "off");
+        model.result().export("anim1").set("legend2d", "on");
+        model.result().export("anim1").set("logo2d", "off");
+        model.result().export("anim1").set("options2d", "on");
+        model.result().export("anim1").set("title3d", "on");
+        model.result().export("anim1").set("legend3d", "on");
+        model.result().export("anim1").set("logo3d", "on");
+        model.result().export("anim1").set("options3d", "on");
+        model.result().export("anim1").set("axisorientation", "on");
+        model.result().export("anim1").set("grid", "on");
+        model.result().export("anim1").set("axes1d", "on");
+        model.result().export("anim1").set("axes2d", "on");
+        model.result().export("anim1").set("showgrid", "on");
+        model.result().export("anim1").set("solnumtype", "level1");
+
+        model.result().export("anim1").set("target", "file");
+        model.result().export("anim1").set("maxframes", 100);
+        model.result().export("anim1").set("fps", 2);
+
+        // Export animations for each parametric case (1-9 strain states)
+        for (int ani = 1; ani <= numStrainCases; ani++) {
+            model.result().export("anim1").setIndex("singlelooplevel", ani, 1);
+            model.result().export("anim1")
+                 .set("giffilename", new File(resultPath, file + "_e" + ani + ".gif").getAbsolutePath());
+            model.result().export("anim1").run();
+            log("  Exported animation for case " + ani + " to " + file + "_e" + ani + ".gif");
+        }
+
+        // Reset to player mode
+        model.result().export("anim1").set("target", "player");
+        model.result().export("anim1").showFrame();
+
+        log("  Created visualization plot groups and animations");
     }
 
     /**
@@ -1220,9 +1429,8 @@ public class Job1207 {
             log("Job finished successfully");
 
         } catch (Exception e) {
-            log("=== COMSOL Job Failed ===");
-            log("Error: " + e.getMessage());
-            e.printStackTrace();
+            logError("=== COMSOL Job Failed ===");
+            logError("Error: " + e.getMessage());
             if (debugLog != null) {
                 e.printStackTrace(debugLog);
             }
@@ -1234,69 +1442,92 @@ public class Job1207 {
     }
 
     /* ========================================
-     * Hardcoded geometry data methods
-     * ======================================== */
-
-    /**
-     * Creates hardcoded sphere geometry data (matching ref.java format).
-     * This defines a simple cubic lattice structure.
-     *
-     * @param lconst lattice constant
-     * @return array of sphere positions [n][3] where each row is [x, y, z]
-     */
-    private static double[][] createHardcodedSpheres(double lconst) {
-        // Simple cubic lattice: 8 corner spheres scaled by lconst
-        // Format matching ref.java: double[][] points
-        double[][] points = new double[][]{
-            {0.0 * lconst, 0.0 * lconst, 0.0 * lconst},  // sphere_001
-            {0.0 * lconst, 0.0 * lconst, 1.0 * lconst},  // sphere_002
-            {0.0 * lconst, 1.0 * lconst, 0.0 * lconst},  // sphere_003
-            {0.0 * lconst, 1.0 * lconst, 1.0 * lconst},  // sphere_004
-            {1.0 * lconst, 0.0 * lconst, 0.0 * lconst},  // sphere_005
-            {1.0 * lconst, 0.0 * lconst, 1.0 * lconst},  // sphere_006
-            {1.0 * lconst, 1.0 * lconst, 0.0 * lconst},  // sphere_007
-            {1.0 * lconst, 1.0 * lconst, 1.0 * lconst}   // sphere_008
-        };
-
-        return points;
-    }
-
-    /**
-     * Creates hardcoded beam geometry data (matching ref.java select_bonds format).
-     * This defines beams connecting the spheres in a cubic lattice.
-     *
-     * @param points array of sphere positions [n][3]
-     * @return array of beam lines [n][2][3] where each beam is [[x1,y1,z1], [x2,y2,z2]]
-     */
-    private static double[][][] createHardcodedBeams(double[][] points) {
-        // 12 edges of the cubic lattice
-        // Format matching ref.java select_bonds: double[][][] lines = [n][2][3]
-        double[][][] lines = new double[][][]{
-            // Bottom face (z=0)
-            {points[0], points[2]},  // sphere_001 -> sphere_003
-            {points[0], points[4]},  // sphere_001 -> sphere_005
-            {points[2], points[6]},  // sphere_003 -> sphere_007
-            {points[4], points[6]},  // sphere_005 -> sphere_007
-
-            // Top face (z=1)
-            {points[1], points[3]},  // sphere_002 -> sphere_004
-            {points[1], points[5]},  // sphere_002 -> sphere_006
-            {points[3], points[7]},  // sphere_004 -> sphere_008
-            {points[5], points[7]},  // sphere_006 -> sphere_008
-
-            // Vertical edges
-            {points[0], points[1]},  // sphere_001 -> sphere_002
-            {points[2], points[3]},  // sphere_003 -> sphere_004
-            {points[4], points[5]},  // sphere_005 -> sphere_006
-            {points[6], points[7]}   // sphere_007 -> sphere_008
-        };
-
-        return lines;
-    }
-
-    /* ========================================
      * Helper methods
      * ======================================== */
+
+    /**
+     * Parses a 3x3 matrix from strainParams array starting at given offset.
+     *
+     * @param strainParams array containing matrix elements as strings
+     * @param offset starting index in the array
+     * @return 3x3 matrix
+     */
+    private static double[][] parseMatrix(String[] strainParams, int offset) {
+        double[][] matrix = new double[3][3];
+        int idx = offset;
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                matrix[i][j] = Double.parseDouble(strainParams[idx++]);
+            }
+        }
+        return matrix;
+    }
+
+    /**
+     * Normalizes each row of a matrix to unit length (matching ref.java unit_tensor).
+     *
+     * @param a input matrix
+     * @return normalized matrix
+     */
+    private static double[][] unitTensor(double[][] a) {
+        double[] l = new double[3];
+        double[][] b = new double[3][3];
+
+        for (int i = 0; i < a.length; i++) {
+            for (int j = 0; j < a[i].length; j++) {
+                l[i] = l[i] + Math.pow(a[i][j], 2);
+            }
+        }
+
+        for (int i = 0; i < a.length; i++) {
+            for (int j = 0; j < a[i].length; j++) {
+                b[i][j] = a[i][j] / Math.sqrt(l[i]);
+            }
+        }
+
+        return b;
+    }
+
+    /**
+     * Transposes a matrix (matching ref.java transpose).
+     *
+     * @param a input matrix
+     * @return transposed matrix
+     */
+    private static double[][] transpose(double[][] a) {
+        double[][] b = new double[3][3];
+
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                b[i][j] = a[j][i];
+            }
+        }
+
+        return b;
+    }
+
+    /**
+     * Performs matrix rotation: A * B^T (matching ref.java rot).
+     * This computes the similarity transformation for tensors.
+     *
+     * @param a rotation matrix
+     * @param b tensor matrix to rotate
+     * @return rotated tensor
+     */
+    private static double[][] rot(double[][] a, double[][] b) {
+        double[][] result = new double[3][3];
+
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                result[i][j] = 0;
+                for (int k = 0; k < 3; k++) {
+                    result[i][j] += a[i][k] * b[k][j];
+                }
+            }
+        }
+
+        return result;
+    }
 
     /**
      * Determines the project root directory by searching for the 'data' folder.
@@ -1312,7 +1543,7 @@ public class Job1207 {
         }
 
         try {
-            java.net.URL classUrl = Job1207.class.getResource("Job1207.class");
+            java.net.URL classUrl = Job001.class.getResource("job_001.class");
             if (classUrl != null) {
                 File classPath = new File(classUrl.toURI()).getParentFile();
 
