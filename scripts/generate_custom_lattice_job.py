@@ -94,6 +94,13 @@ Examples:
         help='Skip confirmation prompts'
     )
 
+    parser.add_argument(
+        '--num-cores',
+        type=int,
+        default=4,
+        help='Number of CPU cores to use for COMSOL batch jobs (default: 4)'
+    )
+
     args = parser.parse_args()
 
     # Print header
@@ -112,7 +119,8 @@ Examples:
     try:
         custom_job = load_custom_lattice_yaml(
             args.input,
-            validate_geometry=not args.no_validate
+            validate_geometry=not args.no_validate,
+            strict=False
         )
         print("✓ YAML loaded and validated successfully")
     except YAMLParseError as e:
@@ -162,7 +170,8 @@ Examples:
     try:
         job_gen = JobGenerator(
             template_dir=args.template_dir,
-            output_base_dir=args.output
+            output_base_dir=args.output,
+            num_cores=args.num_cores
         )
     except Exception as e:
         print(f"✗ Failed to initialize job generator:")
@@ -185,6 +194,8 @@ Examples:
         return 1
 
     print(f"✓ Successfully generated {result['total_jobs']} jobs")
+    if result.get('skipped_jobs', 0) > 0:
+        print(f"⚠ Skipped {result['skipped_jobs']} jobs due to validation errors")
     print()
 
     # Display results
@@ -192,6 +203,9 @@ Examples:
     print(f"  Run ID: {result['run_id']}")
     print(f"  Run directory: {result['run_dir']}")
     print(f"  Jobs generated: {result['total_jobs']}")
+    if result.get('skipped_jobs', 0) > 0:
+        print(f"  Jobs skipped: {result['skipped_jobs']}")
+        print(f"  (See {result['run_dir']}/metadata.yml for details)")
     print()
 
     # Show next steps

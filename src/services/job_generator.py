@@ -29,7 +29,8 @@ class JobGenerator:
     def __init__(
         self,
         template_dir: Path | str,
-        output_base_dir: Path | str
+        output_base_dir: Path | str,
+        num_cores: int = 4 # Default to 4 cores
     ):
         """Initialize job generator.
 
@@ -37,9 +38,11 @@ class JobGenerator:
             template_dir: Directory containing Jinja2 templates
                          (must contain simulation.java.j2 and run.bat.j2)
             output_base_dir: Base directory for job outputs
+            num_cores: Number of CPU cores to use for COMSOL batch jobs
         """
         self.template_dir = Path(template_dir)
         self.output_base_dir = Path(output_base_dir)
+        self.num_cores = num_cores
 
         # Setup Jinja2 environment with custom delimiters from config
         # This avoids conflicts with Java/C++ code syntax ({{, }})
@@ -168,7 +171,8 @@ class JobGenerator:
         self,
         job_dir: Path,
         java_file_path: Path,
-        java_class_name: Optional[str] = None
+        java_class_name: Optional[str] = None,
+        num_cores: int = 1
     ) -> Path:
         """Generate Windows batch file to run COMSOL using Jinja2 template.
 
@@ -176,7 +180,7 @@ class JobGenerator:
             job_dir: Job working directory
             java_file_path: Path to generated Java file
             java_class_name: Java class name (default: inferred from file)
-
+            num_cores: Number of CPU cores to use for batch job
         Returns:
             Path to generated batch file
         """
@@ -200,7 +204,8 @@ class JobGenerator:
             'java_file_name': java_file_path.name,
             'class_name': java_class_name,
             'output_file': f"{java_class_name}.mph",
-            'generated_at': datetime.now().isoformat()
+            'generated_at': datetime.now().isoformat(),
+            'num_cores': num_cores
         }
 
         # Render template
@@ -277,7 +282,8 @@ class JobGenerator:
         batch_file = self.generate_batch_file(
             job_dir,
             java_file,
-            java_class_name=java_file.stem
+            java_class_name=java_file.stem,
+            num_cores=self.num_cores
         )
         config_file = self.generate_config_file(job_dir, params)
 
@@ -342,7 +348,8 @@ class JobGenerator:
         batch_file = self.generate_batch_file(
             job_dir,
             java_file,
-            java_class_name=java_file.stem
+            java_class_name=java_file.stem,
+            num_cores=self.num_cores
         )
 
         # Generate metadata file for this job
@@ -409,6 +416,50 @@ class JobGenerator:
 
         # Apply parameters to geometry
         geometry_data = builder.build_geometry_data(custom_job, param_set)
+
+        # Validate geometry with applied parameters
+        from ..validators.geometry_validator import GeometryValidator
+
+        # Build a temporary Geometry object for validation
+        from ..data.models.custom_lattice import Geometry, Sphere, Beam
+        temp_geometry = Geometry(
+            lattice_constant=geometry_data.lattice_constant,
+            spheres=[
+                Sphere(
+                    id=s.id,
+                    position=s.position,
+                    radius=s.radius,
+                    ratio=s.ratio
+                ) for s in geometry_data.spheres
+            ],
+            beams=[
+                Beam(
+                    id=b.id,
+                    endpoints=[
+                        geometry_data.spheres[b.endpoint1_index].id,
+                        geometry_data.spheres[b.endpoint2_index].id
+                    ],
+                    thickness=b.thickness,
+                    ratio=b.ratio
+                ) for b in geometry_data.beams
+            ]
+        )
+
+        validator = GeometryValidator()
+        validation_result = validator.validate(temp_geometry)
+
+        if not validation_result.is_valid:
+            error_msg = validation_result.get_error_summary()
+            _logger.error(f"Geometry validation failed for job {job_id}:")
+            _logger.error(error_msg)
+            raise ValueError(
+                f"Geometry validation failed for job {job_id}. "
+                f"This job will be skipped.\n{error_msg}"
+            )
+
+        if validation_result.warnings:
+            _logger.warning(f"Geometry validation warnings for job {job_id}:")
+            _logger.warning(validation_result.get_error_summary())
 
         # Calculate default sphere radius and beam radius from geometry
         default_sphere_radius = geometry_data.spheres[0].radius if geometry_data.spheres else 1.0
@@ -554,25 +605,48 @@ class JobGenerator:
 
         # Generate each job
         jobs = []
-        for param_set in param_sets:
-            # Apply parameters to create job-specific configuration
-            job_with_params = generator.apply_parameters_to_geometry(param_set)
+        skipped_jobs = []
+        for i, param_set in enumerate(param_sets, 1):
+            try:
+                # Generate job
+                result = self.generate_custom_lattice_job(
+                    custom_job,
+                    job_id=param_set.job_id,
+                    run_id=run_id,
+                    param_set=param_set
+                )
+                jobs.append(result)
+                _logger.info(f"Generated job {i}/{len(param_sets)}: {param_set.job_id}")
+            except ValueError as e:
+                # Skip jobs with validation errors
+                _logger.warning(f"Skipping job {param_set.job_id} due to validation error: {e}")
+                skipped_jobs.append({
+                    'job_id': param_set.job_id,
+                    'error': str(e),
+                    'parameters': param_set.parameters
+                })
 
-            # Generate job
-            result = self.generate_custom_lattice_job(
-                job_with_params,
-                job_id=param_set.job_id,
-                run_id=run_id
-            )
-            jobs.append(result)
+        _logger.info(
+            f"Parametric study generation completed: {run_id} "
+            f"({len(jobs)} jobs generated, {len(skipped_jobs)} jobs skipped)"
+        )
 
-        _logger.info(f"Parametric study generation completed: {run_id} ({len(jobs)} jobs)")
+        # Update run metadata with actual generated jobs
+        run_metadata['jobs_generated'] = len(jobs)
+        run_metadata['jobs_skipped'] = len(skipped_jobs)
+        if skipped_jobs:
+            run_metadata['skipped_jobs'] = skipped_jobs
+
+        # Re-write metadata with updated counts
+        with open(run_metadata_path, 'w', encoding='utf-8') as f:
+            yaml.dump(run_metadata, f, default_flow_style=False, allow_unicode=True)
 
         return {
             'run_id': run_id,
             'run_dir': run_dir,
             'run_metadata': run_metadata_path,
             'total_jobs': len(jobs),
+            'skipped_jobs': len(skipped_jobs),
             'jobs': jobs
         }
 
@@ -614,3 +688,4 @@ __all__ = [
     "JobGenerator",
     "validate_parameters"
 ]
+

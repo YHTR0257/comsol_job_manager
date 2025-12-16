@@ -82,16 +82,34 @@ class GeometryValidator:
         warnings = []
 
         # Check for sphere overlaps
-        overlap_errors = self._check_sphere_overlaps(geometry.spheres)
-        errors.extend(overlap_errors)
+        overlap_errors_and_warnings = self._check_sphere_overlaps(geometry.spheres)
+        for val_res in overlap_errors_and_warnings:
+            if val_res.severity == 'error':
+                errors.append(val_res)
+            else:
+                warnings.append(val_res)
+
 
         # Check beam-sphere connections
         if geometry.beams:
-            connection_errors = self._check_beam_connections(
+            connection_errors_and_warnings = self._check_beam_connections(
                 geometry.spheres,
                 geometry.beams
             )
-            errors.extend(connection_errors)
+            for val_res in connection_errors_and_warnings:
+                if val_res.severity == 'error':
+                    errors.append(val_res)
+                else:
+                    warnings.append(val_res)
+
+        # Check beam thickness vs sphere radius
+        if geometry.beams:
+            thickness_errors = self._check_beam_thickness_vs_sphere_radius(
+                geometry.spheres,
+                geometry.beams
+            )
+            errors.extend(thickness_errors)
+
 
         # Note: lattice_constant validation removed (it's now a scalar, not vectors)
         # The lattice_constant is used as a reference length and doesn't need
@@ -126,6 +144,21 @@ class GeometryValidator:
         for i in range(n):
             for j in range(i + 1, n):
                 s1, s2 = spheres[i], spheres[j]
+
+                # If radius is None, this sphere is parametrically defined.
+                # Skip overlap check for such spheres as their final radius is not known yet.
+                if s1.radius is None or s2.radius is None:
+                    errors.append(ValidationError(
+                        error_type='sphere_radius_undefined',
+                        message=(
+                            f"Sphere {s1.id} or {s2.id} has undefined radius. "
+                            "Overlap check skipped for parametrically defined spheres."
+                        ),
+                        element_ids=[s1.id, s2.id],
+                        severity='warning'
+                    ))
+                    continue
+
                 distance = self._calculate_distance(s1.position, s2.position)
                 min_distance = s1.radius + s2.radius
 
@@ -170,6 +203,21 @@ class GeometryValidator:
             s1 = sphere_dict[s1_id]
             s2 = sphere_dict[s2_id]
 
+            # If thickness or radius is None, this beam/sphere is parametrically defined.
+            # Skip connection check for such elements.
+            if beam.thickness is None or s1.radius is None or s2.radius is None:
+                errors.append(ValidationError(
+                    error_type='beam_or_sphere_undefined',
+                    message=(
+                        f"Beam {beam.id} or its endpoint spheres ({s1_id}, {s2_id}) "
+                        "have undefined thickness/radius. Connection check skipped for "
+                        "parametrically defined elements."
+                    ),
+                    element_ids=[beam.id, s1_id, s2_id],
+                    severity='warning'
+                ))
+                continue
+
             # Calculate distance between sphere centers
             center_distance = self._calculate_distance(s1.position, s2.position)
 
@@ -191,6 +239,68 @@ class GeometryValidator:
                 ))
             # Note: We don't check if the gap is "too large" because in custom lattices,
             # beams are meant to connect distant spheres. The gap size is a design choice.
+
+        return errors
+
+    def _check_beam_thickness_vs_sphere_radius(
+        self,
+        spheres: List[Sphere],
+        beams: List[Beam]
+    ) -> List[ValidationError]:
+        """Check if beam thickness exceeds sphere radius at endpoints.
+
+        A beam that is thicker than the sphere radius at its endpoints
+        would create an invalid geometry where the beam is larger than
+        the sphere it connects to.
+
+        Args:
+            spheres: List of sphere definitions
+            beams: List of beam definitions
+
+        Returns:
+            List of validation errors for beams thicker than their endpoint spheres
+        """
+        errors = []
+        sphere_dict = {s.id: s for s in spheres}
+
+        for beam in beams:
+            s1_id, s2_id = beam.endpoints
+            s1 = sphere_dict.get(s1_id)
+            s2 = sphere_dict.get(s2_id)
+
+            if not s1 or not s2:
+                # Endpoint sphere not found - this should be caught elsewhere
+                continue
+
+            # Skip if any parameter is undefined (parametric definition)
+            if beam.thickness is None or s1.radius is None or s2.radius is None:
+                continue
+
+            # Beam thickness should not exceed sphere radius
+            # (beam radius = thickness / 2, so we compare thickness to 2 * sphere_radius)
+            if beam.thickness > 2 * s1.radius + self.tolerance:
+                errors.append(ValidationError(
+                    error_type='beam_thicker_than_sphere',
+                    message=(
+                        f"Beam {beam.id} thickness ({beam.thickness:.4f}) exceeds "
+                        f"2x sphere {s1_id} radius ({2 * s1.radius:.4f}). "
+                        f"Beam would be wider than the sphere."
+                    ),
+                    element_ids=[beam.id, s1_id],
+                    severity='error'
+                ))
+
+            if beam.thickness > 2 * s2.radius + self.tolerance:
+                errors.append(ValidationError(
+                    error_type='beam_thicker_than_sphere',
+                    message=(
+                        f"Beam {beam.id} thickness ({beam.thickness:.4f}) exceeds "
+                        f"2x sphere {s2_id} radius ({2 * s2.radius:.4f}). "
+                        f"Beam would be wider than the sphere."
+                    ),
+                    element_ids=[beam.id, s2_id],
+                    severity='error'
+                ))
 
         return errors
 

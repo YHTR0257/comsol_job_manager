@@ -18,11 +18,13 @@ class Sphere(BaseModel):
     Attributes:
         id: Unique identifier for the sphere (1-indexed in YAML)
         position: Position [x, y, z] in mm (absolute coordinates)
-        radius: Radius in mm (must be positive)
+        radius: Radius in mm (must be positive). Can be optional if using ratio.
+        ratio: Multiplier for the parametric radius. Defaults to 1.0.
     """
     id: int = Field(..., gt=0, description="Sphere ID must be positive")
     position: List[float] = Field(..., min_length=3, max_length=3)
-    radius: float = Field(..., gt=0, description="Radius must be positive")
+    radius: Optional[float] = Field(None, gt=0, description="Radius must be positive")
+    ratio: float = Field(1.0, gt=0, description="Multiplier for parametric radius")
 
     @field_validator('position')
     @classmethod
@@ -39,11 +41,13 @@ class Beam(BaseModel):
     Attributes:
         id: Unique identifier for the beam (1-indexed in YAML)
         endpoints: List of two sphere IDs (1-indexed) that this beam connects
-        thickness: Thickness/diameter in mm (must be positive)
+        thickness: Thickness/diameter in mm (must be positive). Can be optional if using ratio.
+        ratio: Multiplier for the parametric thickness. Defaults to 1.0.
     """
     id: int = Field(..., gt=0, description="Beam ID must be positive")
     endpoints: List[int] = Field(..., min_length=2, max_length=2)
-    thickness: float = Field(..., gt=0, description="Thickness must be positive")
+    thickness: Optional[float] = Field(None, gt=0, description="Thickness must be positive")
+    ratio: float = Field(1.0, gt=0, description="Multiplier for parametric thickness")
 
     @field_validator('endpoints')
     @classmethod
@@ -228,15 +232,15 @@ class CustomLatticeJob(BaseModel):
 
         Supports:
         - sphere.radius (all spheres)
-        - sphere.{index}.radius (specific sphere, 0-indexed)
+        - sphere.{index}.radius / .ratio (specific sphere, 0-indexed)
         - beam.thickness (all beams)
-        - beam.{index}.thickness (specific beam, 0-indexed)
+        - beam.{index}.thickness / .ratio (specific beam, 0-indexed)
         """
         valid_patterns = [
             'sphere.radius',
-            'sphere.',  # Allows sphere.0.radius, sphere.1.radius, etc.
+            'sphere.',  # Allows sphere.0.radius, sphere.1.ratio, etc.
             'beam.thickness',
-            'beam.',     # Allows beam.0.thickness, beam.1.thickness, etc.
+            'beam.',     # Allows beam.0.thickness, beam.1.ratio, etc.
         ]
 
         for sweep in self.job.parametric.sweeps:
@@ -246,8 +250,8 @@ class CustomLatticeJob(BaseModel):
             if not is_valid:
                 raise ValueError(
                     f"Invalid parametric parameter '{param}'. "
-                    f"Must match: sphere.radius, sphere.{{N}}.radius, "
-                    f"beam.thickness, or beam.{{N}}.thickness"
+                    f"Must match: sphere.radius, sphere.{{N}}.radius/ratio, "
+                    f"beam.thickness, or beam.{{N}}.thickness/ratio"
                 )
 
             # Validate index if specific element is referenced
@@ -262,21 +266,21 @@ class CustomLatticeJob(BaseModel):
                         f"Invalid index in parameter '{param}': '{index_str}' is not an integer"
                     )
 
-                # Validate index is within bounds
+                # Validate index is within bounds and field name
                 if prefix == 'sphere':
                     if index < 0 or index >= len(self.geometry.spheres):
                         raise ValueError(
                             f"Sphere index {index} out of bounds (0-{len(self.geometry.spheres)-1})"
                         )
-                    if field != 'radius':
-                        raise ValueError(f"Invalid field for sphere: '{field}' (must be 'radius')")
+                    if field not in ['radius', 'ratio']:
+                        raise ValueError(f"Invalid field for sphere: '{field}' (must be 'radius' or 'ratio')")
 
                 elif prefix == 'beam':
                     if index < 0 or index >= len(self.geometry.beams):
                         raise ValueError(
                             f"Beam index {index} out of bounds (0-{len(self.geometry.beams)-1})"
                         )
-                    if field != 'thickness':
-                        raise ValueError(f"Invalid field for beam: '{field}' (must be 'thickness')")
+                    if field not in ['thickness', 'ratio']:
+                        raise ValueError(f"Invalid field for beam: '{field}' (must be 'thickness' or 'ratio')")
 
         return self

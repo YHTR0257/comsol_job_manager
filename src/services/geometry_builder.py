@@ -27,10 +27,12 @@ class SphereData:
         id: Sphere ID (1-indexed as in YAML)
         position: Absolute position [x, y, z] in mm
         radius: Radius in mm
+        ratio: Radius ratio to global radius
     """
     id: int
     position: List[float]
     radius: float
+    ratio: float
 
 
 @dataclass
@@ -42,11 +44,13 @@ class BeamData:
         endpoint1_index: Index in points array (0-indexed)
         endpoint2_index: Index in points array (0-indexed)
         thickness: Thickness/diameter in mm
+        ratio: Thickness ratio to global thickness
     """
     id: int
     endpoint1_index: int
     endpoint2_index: int
     thickness: float
+    ratio: float
 
 
 @dataclass
@@ -103,10 +107,21 @@ class GeometryBuilder:
         # Build sphere data
         sphere_data_list = []
         for sphere in geometry.spheres:
+            # Ensure radius is not None before passing to SphereData
+            # This should ideally be handled by apply_parametric_parameters
+            # or a default for templating if not set.
+            # For now, if still None, assign a default to prevent template errors.
+            if sphere.radius is None:
+                # Log a warning or raise an error if this state is unexpected
+                # For parametric, this would mean 'sphere.radius' was not in default or sweep
+                final_radius = 1.0 # Fallback default
+            else:
+                final_radius = sphere.radius
             sphere_data_list.append(SphereData(
                 id=sphere.id,
                 position=sphere.position.copy(),
-                radius=sphere.radius
+                radius=final_radius,
+                ratio=sphere.ratio
             ))
 
         # Build beam data with endpoint indices
@@ -116,11 +131,17 @@ class GeometryBuilder:
                 beam,
                 geometry.spheres
             )
+            # Ensure thickness is not None before passing to BeamData
+            if beam.thickness is None:
+                final_thickness = 0.5 # Fallback default
+            else:
+                final_thickness = beam.thickness
             beam_data_list.append(BeamData(
                 id=beam.id,
                 endpoint1_index=endpoint1_idx,
                 endpoint2_index=endpoint2_idx,
-                thickness=beam.thickness
+                thickness=final_thickness,
+                ratio=beam.ratio
             ))
 
         return GeometryData(
@@ -151,25 +172,33 @@ class GeometryBuilder:
         # Deep copy to avoid modifying original
         new_geometry = copy.deepcopy(geometry)
 
-        # Step 1: Apply global parameters first
-        if 'sphere.radius' in param_set.parameters:
-            radius = param_set.parameters['sphere.radius']
+        # Get global parameters for potential recalculation later
+        global_sphere_radius = param_set.parameters.get('sphere.radius')
+        global_beam_thickness = param_set.parameters.get('beam.thickness')
+        safety_factor = 0.99 # Safety factor to avoid touching/overlapping geometry
+        print(f"DEBUG: In apply_parametric_parameters for job {param_set.job_id}")
+        print(f"DEBUG:   param_set.parameters: {param_set.parameters}")
+        print(f"DEBUG:   global_beam_thickness from param_set: {global_beam_thickness}")
+
+
+        # Step 1: Apply global parameters, considering 'ratio'
+        if global_sphere_radius is not None:
             for sphere in new_geometry.spheres:
-                sphere.radius = radius
+                sphere.radius = (global_sphere_radius * sphere.ratio) * safety_factor
 
-        if 'beam.thickness' in param_set.parameters:
-            thickness = param_set.parameters['beam.thickness']
+        if global_beam_thickness is not None:
+            print(f"DEBUG:   Applying global_beam_thickness: {global_beam_thickness}")
             for beam in new_geometry.beams:
-                # 第一近接ビーム (id: 1-24) には直接適用
-                # 第二近接ビーム (id: 25以降) には0.8倍を適用
-                if beam.id <= 24:
-                    beam.thickness = thickness
-                else:
-                    beam.thickness = thickness * 0.8
+                original_thickness = beam.thickness
+                calculated_thickness = (global_beam_thickness * beam.ratio) * safety_factor
+                beam.thickness = calculated_thickness
+                print(f"DEBUG:     Beam ID {beam.id}: ratio={beam.ratio}, original_thickness={original_thickness}, new_thickness={beam.thickness}")
+        else:
+            print("DEBUG:   global_beam_thickness is None. Skipping beam thickness updates.")
 
-        # Step 2: Apply specific parameters (override globals)
+        # Step 2: Apply specific parameters (override globals or specific ratios)
         for param_name, param_value in param_set.parameters.items():
-            # Parse sphere.{index}.radius
+            # Parse sphere.{index}.radius / .ratio
             if param_name.startswith('sphere.') and param_name.count('.') == 2:
                 parts = param_name.split('.')
                 # Check if parts[1] is a digit (index)
@@ -177,10 +206,16 @@ class GeometryBuilder:
                     index = int(parts[1])
                     field = parts[2]
 
-                    if field == 'radius' and 0 <= index < len(new_geometry.spheres):
-                        new_geometry.spheres[index].radius = param_value
+                    if 0 <= index < len(new_geometry.spheres):
+                        if field == 'radius':
+                            new_geometry.spheres[index].radius = param_value * safety_factor
+                        elif field == 'ratio':
+                            new_geometry.spheres[index].ratio = param_value
+                            if global_sphere_radius is not None:
+                                new_geometry.spheres[index].radius = (global_sphere_radius * param_value) * safety_factor
 
-            # Parse beam.{index}.thickness
+
+            # Parse beam.{index}.thickness / .ratio
             elif param_name.startswith('beam.') and param_name.count('.') == 2:
                 parts = param_name.split('.')
                 # Check if parts[1] is a digit (index)
@@ -188,8 +223,14 @@ class GeometryBuilder:
                     index = int(parts[1])
                     field = parts[2]
 
-                    if field == 'thickness' and 0 <= index < len(new_geometry.beams):
-                        new_geometry.beams[index].thickness = param_value
+                    if 0 <= index < len(new_geometry.beams):
+                        if field == 'thickness':
+                            print(f"DEBUG:   Applying specific override for {param_name} = {param_value}")
+                            new_geometry.beams[index].thickness = param_value * safety_factor
+                        elif field == 'ratio':
+                            new_geometry.beams[index].ratio = param_value
+                            if global_beam_thickness is not None:
+                                new_geometry.beams[index].thickness = (global_beam_thickness * param_value) * safety_factor
 
         return new_geometry
 

@@ -143,40 +143,56 @@ class ParametricGenerator:
         # Deep copy the job to avoid modifying the original
         new_job = copy.deepcopy(self.job)
 
-        # Step 1: Apply global parameters first
-        if 'sphere.radius' in param_set.parameters:
-            radius = param_set.parameters['sphere.radius']
+        # Get global parameters for potential recalculation later
+        global_sphere_radius = param_set.parameters.get('sphere.radius')
+        global_beam_thickness = param_set.parameters.get('beam.thickness')
+
+        # Step 1: Apply global parameters, considering 'ratio'
+        if global_sphere_radius is not None:
             for sphere in new_job.geometry.spheres:
-                sphere.radius = radius
+                # Use default ratio if not explicitly set in YAML (pydantic handles default)
+                sphere.radius = global_sphere_radius * sphere.ratio
 
-        if 'beam.thickness' in param_set.parameters:
-            thickness = param_set.parameters['beam.thickness']
+        if global_beam_thickness is not None:
             for beam in new_job.geometry.beams:
-                beam.thickness = thickness
+                # Use default ratio if not explicitly set in YAML (pydantic handles default)
+                beam.thickness = global_beam_thickness * beam.ratio
 
-        # Step 2: Apply specific parameters (override globals)
+        # Step 2: Apply specific parameters (override globals or specific ratios)
         for param_name, param_value in param_set.parameters.items():
-            # Parse sphere.{index}.radius
+            # Parse sphere.{index}.radius / .ratio
             if param_name.startswith('sphere.') and param_name.count('.') == 2:
                 parts = param_name.split('.')
                 try:
                     index = int(parts[1])
                     field = parts[2]
 
-                    if field == 'radius' and 0 <= index < len(new_job.geometry.spheres):
-                        new_job.geometry.spheres[index].radius = param_value
+                    if 0 <= index < len(new_job.geometry.spheres):
+                        if field == 'radius':
+                            new_job.geometry.spheres[index].radius = param_value
+                        elif field == 'ratio':
+                            new_job.geometry.spheres[index].ratio = param_value
+                            # If ratio changes, re-calculate radius if global radius is set
+                            if global_sphere_radius is not None:
+                                new_job.geometry.spheres[index].radius = global_sphere_radius * param_value
                 except (ValueError, IndexError):
                     continue  # Skip invalid parameter names
 
-            # Parse beam.{index}.thickness
+            # Parse beam.{index}.thickness / .ratio
             elif param_name.startswith('beam.') and param_name.count('.') == 2:
                 parts = param_name.split('.')
                 try:
                     index = int(parts[1])
                     field = parts[2]
 
-                    if field == 'thickness' and 0 <= index < len(new_job.geometry.beams):
-                        new_job.geometry.beams[index].thickness = param_value
+                    if 0 <= index < len(new_job.geometry.beams):
+                        if field == 'thickness':
+                            new_job.geometry.beams[index].thickness = param_value
+                        elif field == 'ratio':
+                            new_job.geometry.beams[index].ratio = param_value
+                            # If ratio changes, re-calculate thickness if global thickness is set
+                            if global_beam_thickness is not None:
+                                new_job.geometry.beams[index].thickness = global_beam_thickness * param_value
                 except (ValueError, IndexError):
                     continue  # Skip invalid parameter names
 
