@@ -8,55 +8,55 @@ This is the ESP (Electronic Structure Properties) project - a materials science 
 
 **Core Purpose:**
 - Automate COMSOL Multiphysics simulations for lattice structure shape optimization
+- Support custom lattice structures with parametric studies
 - Load and analyze VASP (Vienna Ab initio Simulation Package) calculation results
 - Store elastic properties, mechanical properties, and calculation metadata in PostgreSQL
 - Support materials science research workflows (k-point convergence analysis, elastic tensor calculations)
 
 ## Development Commands
 
-### Job Generation and Execution
+### Custom Lattice Job Generation (Recommended)
 
 ```bash
-# Full workflow: Generate + Execute
-python -c "
-from src.services import JobGenerator, execute_job
-from pathlib import Path
+# Generate jobs from custom lattice YAML definition
+python scripts/generate_custom_lattice_job.py -i templates/lattice_setting/fcc.yml
 
-# Generate job
-generator = JobGenerator(
-    template_dir=Path('templates'),
-    output_base_dir=Path('jobs/comsol')
-)
+# Generate with specific output directory
+python scripts/generate_custom_lattice_job.py -i templates/lattice_setting/simple_cubic.yml -o jobs/comsol
 
-params = {
-    'lattice_constant': 1.0,
-    'sphere_radius_ratio': 0.15,
-    'bond_radius_ratio': 0.08,
-    'num_cells': 3,
-}
+# Generate with custom run ID
+python scripts/generate_custom_lattice_job.py -i templates/lattice_setting/fcc.yml --run-id test_run_01
 
-result = generator.generate_job(params)
-job_dir = result['job_dir']
-print(f'Generated: {job_dir}')
+# Generate with 8 cores and skip .mph file saving
+python scripts/generate_custom_lattice_job.py -i templates/lattice_setting/fcc.yml --num-cores 8 --no-save-mph
 
-# Execute job (WSL only)
-exec_result = execute_job(job_dir, timeout=3600)
-print(f'Exit code: {exec_result.returncode}')
-"
-
-# Check COMSOL availability
-python -c "
-from src.services import BatchExecutor
-executor = BatchExecutor()
-print(f'COMSOL available: {executor.check_comsol_available()}')
-print(f'WSL environment: {executor.is_wsl}')
-"
+# Skip confirmation for batch generation
+python scripts/generate_custom_lattice_job.py -i templates/lattice_setting/fcc.yml -y
 ```
 
-### Job Generation
+Available lattice settings:
+- `templates/lattice_setting/fcc.yml` - Face-Centered Cubic structure
+- `templates/lattice_setting/simple_cubic.yml` - Simple Cubic structure
+- `templates/lattice_setting/mimetic_Al.yml` - Mimetic Aluminum structure
+- `templates/lattice_setting/mimetic_Cu.yml` - Mimetic Copper structure
+
+### Job Execution
 
 ```bash
-# Generate a single COMSOL job
+# Execute jobs from a run directory
+python scripts/execute_comsol_job.py -j jobs/comsol/run_YYYYMMDD_HHMMSS
+
+# Execute with custom timeout (2 hours)
+python scripts/execute_comsol_job.py -j jobs/comsol/run_YYYYMMDD_HHMMSS -t 7200
+
+# Execute specific job within a run
+python scripts/execute_comsol_job.py -j jobs/comsol/run_YYYYMMDD_HHMMSS/job_001
+```
+
+### Legacy: Simple Job Generation
+
+```bash
+# Generate a single COMSOL job (legacy method)
 python -c "
 from src.services import JobGenerator
 from pathlib import Path
@@ -80,25 +80,6 @@ print(f'Generated: {result[\"job_dir\"]}')
 
 # Run job generation test suite
 python scripts/test_job_generator.py
-```
-
-### Job Execution
-
-```bash
-# List available jobs
-python3 scripts/test_job_executor.py --list
-
-# Execute the most recent job
-python3 scripts/test_job_executor.py --latest
-
-# Execute specific job
-python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230
-
-# Execute with custom timeout (2 hours)
-python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230 -t 7200
-
-# Skip COMSOL availability check
-python3 scripts/test_job_executor.py -j jobs/comsol/job_20251119_161230 --no-check-comsol
 ```
 
 ### Database Management
@@ -128,9 +109,12 @@ pytest tests/unit/test_job_generator.py
 
 # Run with verbose output
 pytest -v tests/
-```
 
-**Note:** Test infrastructure is not yet implemented. Tests should be placed in `tests/unit/` and use pytest.
+# Run custom lattice tests
+pytest tests/unit/test_custom_lattice_job_generation.py
+pytest tests/unit/test_geometry_validator.py
+pytest tests/unit/test_parametric_generator.py
+```
 
 ### Environment Setup
 
@@ -155,6 +139,18 @@ WSL/Linux Environment → Job Generation → Windows COMSOL Execution
          Result Analysis & Storage
 ```
 
+### Custom Lattice Workflow
+
+```
+YAML Definition → Parser → Geometry Builder → Validator
+                                                  ↓
+                            Job Generator ← Template (Jinja2)
+                                  ↓
+                            Batch Executor → Windows COMSOL
+                                  ↓
+                         Result Visualization
+```
+
 ### Key Components
 
 **Configuration System** (`src/config/loader.py`)
@@ -176,6 +172,7 @@ WSL/Linux Environment → Job Generation → Windows COMSOL Execution
 - `VASPResult`: DFT calculation results, k-points, convergence, elastic constants
 - `ElasticConstants`: Full 6x6 stiffness (C_ij) and compliance (S_ij) tensors
 - `MechanicalProperties`: Voigt-Reuss-Hill averages, anisotropy, wave velocities, Debye temperature
+- `CustomLatticeJob`: Custom lattice structure definition from YAML
 
 **VASP Data Loading** (`src/data/vasp.py`)
 - Parse POSCAR files → pymatgen Structure objects
@@ -190,15 +187,52 @@ WSL/Linux Environment → Job Generation → Windows COMSOL Execution
 - Convert legacy NPZ files to Parquet
 - Returns (ids, X) or (ids, X, feature_names)
 
-### COMSOL Automation Components (Planned)
+### COMSOL Automation Components
 
 **Job Generator** (`src/services/job_generator.py`)
 - Generate Java/Batch/Config files from Jinja2 templates
-- Job ID format: `job_YYYYMMDD_HHMMSS`
-- Output directory: `jobs/comsol/job_YYYYMMDD_HHMMSS/`
-- Templates: `templates/simulation.java.j2` and `templates/run.bat.j2`
-- All generation is template-based (no reference files required)
+- Supports two generation modes:
+  - Legacy: Simple job generation (`generate_job()`)
+  - Custom Lattice: Advanced geometry-based generation (`generate_custom_lattice_job()`, `generate_parametric_study_jobs()`)
+- Job ID format: `job_YYYYMMDD_HHMMSS` (legacy) or `run_YYYYMMDD_HHMMSS/job_NNN` (custom lattice)
+- Output directory: `jobs/comsol/job_YYYYMMDD_HHMMSS/` or `jobs/comsol/run_YYYYMMDD_HHMMSS/job_NNN/`
+- Templates:
+  - `templates/simulation.java.j2` (legacy)
+  - `templates/custom_lattice.java.j2` (custom lattice)
+  - `templates/run.bat.j2` (batch execution)
+- Custom Jinja2 delimiters to avoid conflicts with Java code: `<% %>`, `<< >>`, `<# #>`
 - Assumes `comsol` command is in Windows PATH
+
+**Geometry Builder** (`src/services/geometry_builder.py`)
+- Build custom lattice geometry from YAML definitions
+- Apply parametric transformations to spheres and beams
+- Generate geometry data for COMSOL templates
+- Support for sphere radius ratios and beam thickness ratios
+
+**Parametric Generator** (`src/services/parametric_generator.py`)
+- Generate parameter sets for parametric studies
+- Support for range, linspace, and logspace sweeps
+- Multi-dimensional parameter sweeps with Cartesian product
+- Job ID generation for parametric runs
+
+**Geometry Validator** (`src/validators/geometry_validator.py`)
+- Validate custom lattice geometries before job generation
+- Check for sphere overlaps
+- Verify beam-sphere connections
+- Ensure beam thickness < sphere radius
+- Minimum difference check (0.01mm) to prevent COMSOL geometry errors
+
+**Template Validator** (`src/validators/template_validator.py`)
+- Validate generated Java code from Jinja2 templates
+- Check for unrendered template variables
+- Detect Java syntax errors
+- Prevent common template mistakes
+
+**YAML Parser** (`src/parsers/yaml_loader.py`)
+- Load and validate custom lattice YAML definitions
+- Parse geometry, materials, mesh, and study configurations
+- Validate parametric sweep definitions
+- Support for strict and lenient validation modes
 
 **Batch Executor** (`src/services/batch_executor.py`)
 - Execute Windows batch files from WSL via cmd.exe
@@ -208,12 +242,18 @@ WSL/Linux Environment → Job Generation → Windows COMSOL Execution
 - Timeout management and error handling
 - `execute_job()` convenience function for quick execution
 
-**Result Analyzer** (`src/services/result_analyzer.py`)
+**Parametric Study Visualizer** (`src/visualization/parametric_study_visualizer.py`)
+- Visualize results from parametric studies
+- Generate plots for parameter sweeps
+- Support for 1D, 2D, and multi-dimensional data
+- Export plots in various formats (PNG, SVG, PDF)
+
+**Result Analyzer** (`src/services/result_analyzer.py`) (Planned)
 - Parse kirchhoff.txt and maxmises.txt
 - Calculate stiffness matrices and elastic constants
 - Evaluate objective functions for optimization
 
-**Optuna Optimizer** (`src/optimizers/optuna_optimizer.py`)
+**Optuna Optimizer** (`src/optimizers/optuna_optimizer.py`) (Planned)
 - Bayesian optimization for lattice structure parameters
 - Integration with job generation → execution → analysis pipeline
 
@@ -323,6 +363,31 @@ X_flatten = data['flatten']
 X_shape = data['shape']
 ```
 
+**Custom Lattice Job Generation:**
+```python
+from pathlib import Path
+from src.parsers import load_custom_lattice_yaml
+from src.services import JobGenerator
+
+# Load YAML definition
+custom_job = load_custom_lattice_yaml(
+    Path('templates/lattice_setting/fcc.yml'),
+    validate_geometry=True
+)
+
+# Create job generator
+generator = JobGenerator(
+    template_dir=Path('templates'),
+    output_base_dir=Path('jobs/comsol'),
+    num_cores=4,
+    save_mph=True
+)
+
+# Generate parametric study jobs
+result = generator.generate_parametric_study_jobs(custom_job)
+print(f"Generated {result['total_jobs']} jobs in {result['run_dir']}")
+```
+
 **WSL-Windows Path Conversion:**
 ```python
 from src.utils import detect_wsl, wsl_to_windows_path, windows_to_wsl_path
@@ -353,7 +418,9 @@ executor.execute_batch('/path/to/script.bat')
 **Database:** SQLAlchemy>=2.0, psycopg2-binary
 **Materials Science:** pymatgen>=2024.8.1
 **ML/Optimization:** scikit-learn, scipy, lightgbm>=4.0.0, optuna
-**Testing:** pytest, jupyter lab, matplotlib, seaborn
+**Template:** Jinja2
+**Visualization:** matplotlib, seaborn
+**Testing:** pytest, jupyter lab
 
 ## Database Schema Notes
 
@@ -368,17 +435,39 @@ All models inherit from `Base` and use `TimestampMixin` for automatic `created_a
 
 - `src/config/`: Configuration loading and logging setup
 - `src/data/`: Database connection, models, data loading utilities
-- `src/services/`: COMSOL job management (job_generator, batch_executor, result_analyzer)
-- `templates/`: Jinja2 templates (run.bat.j2 for batch file generation)
+  - `src/data/models/custom_lattice.py`: Custom lattice structure data models
+- `src/services/`: COMSOL job management
+  - `job_generator.py`: Job generation from templates
+  - `batch_executor.py`: Windows batch execution from WSL
+  - `geometry_builder.py`: Custom lattice geometry construction
+  - `parametric_generator.py`: Parametric study generation
+- `src/validators/`: Input validation
+  - `geometry_validator.py`: Validate custom lattice geometries
+  - `template_validator.py`: Validate generated Java code
+- `src/parsers/`: Input file parsers
+  - `yaml_loader.py`: Load and validate custom lattice YAML
+- `src/visualization/`: Result visualization
+  - `parametric_study_visualizer.py`: Parametric study plots
+- `templates/`: Jinja2 templates
+  - `simulation.java.j2`: Legacy Java template
+  - `custom_lattice.java.j2`: Custom lattice Java template
+  - `run.bat.j2`: Batch execution template
+  - `lattice_setting/`: Predefined lattice structure YAML files
 - `src/optimizers/`: Optimization algorithms (base classes and Optuna implementation)
-- `src/parsers/`: Result file parsers (kirchhoff, maxmises)
 - `src/utils/`: Utility functions (path_utils for WSL-Windows path conversion)
-- `scripts/`: Test scripts (test_job_generator.py, test_job_executor.py)
+- `scripts/`: CLI scripts
+  - `generate_custom_lattice_job.py`: Generate jobs from YAML
+  - `execute_comsol_job.py`: Execute COMSOL jobs
+  - `test_job_generator.py`: Test job generation
+  - `visualize_parametric_study.py`: Visualize parametric study results
 - `docs/`: Design documents (project_design.md, database.md, user_guide.md)
 - `docker/`: Docker configurations and requirements.txt
 - `configs/dev/` and `configs/prod/`: Environment-specific YAML configs
-- `jobs/comsol/job_YYYYMMDD_HHMMSS/`: Job working directories with results
+- `jobs/comsol/`: Job working directories
+  - `job_YYYYMMDD_HHMMSS/`: Legacy job directory
+  - `run_YYYYMMDD_HHMMSS/job_NNN/`: Custom lattice job directory
 - `tests/unit/`: Unit tests (pytest)
+- `tests/integration/`: Integration tests
 
 ## Development Principles
 
@@ -393,10 +482,13 @@ All models inherit from `Base` and use `TimestampMixin` for automatic `created_a
 - Data access: `src/data/`
 - Business logic: `src/services/` and `src/optimizers/`
 - I/O parsing: `src/parsers/`
+- Validation: `src/validators/`
+- Visualization: `src/visualization/`
 
 **Error Handling:**
 - Fatal errors (DB connection failure, missing templates): Fail immediately
 - Recoverable errors (job timeout, convergence failure): Log and continue
+- Validation errors: Report detailed messages with element IDs
 - Use logging extensively with appropriate levels (DEBUG, INFO, WARNING, ERROR)
 
 ## Context Notes
@@ -408,6 +500,27 @@ All models inherit from `Base` and use `TimestampMixin` for automatic `created_a
   - Uses `cmd.exe` to execute Windows batch files
   - Path conversion via `wslpath` (WSL → Windows)
   - In non-WSL environments (pure Linux/Docker), batch execution logs warnings
+- Custom lattice workflow uses YAML definitions for flexible geometry specification
+- Parametric studies generate multiple jobs with parameter sweeps
+- Geometry validation prevents COMSOL errors by checking sphere overlaps and beam connections
+- Template validation ensures generated Java code is syntactically correct
 - Database schema is comprehensive for materials science (elastic tensors, mechanical properties, VASPKIT/LOBSTER integration)
 - Sequential execution model (no job queue) - one simulation at a time
 - Development uses Docker for PostgreSQL, but Python runs on host
+
+## Recent Changes (2025)
+
+- **Custom Lattice System**: Complete implementation of custom lattice structure support
+  - YAML-based geometry definitions with sphere and beam primitives
+  - Parametric study generation with multi-dimensional sweeps
+  - Geometry validation to prevent overlaps and disconnections
+  - Template validation for generated Java code
+- **New Components**:
+  - `GeometryBuilder`: Build geometry from YAML definitions
+  - `ParametricGenerator`: Generate parameter sets for sweeps
+  - `GeometryValidator`: Validate custom lattice geometries
+  - `TemplateValidator`: Validate generated Java templates
+  - `ParametricStudyVisualizer`: Visualize parametric study results
+- **Templates**: New `custom_lattice.java.j2` with custom Jinja2 delimiters
+- **Scripts**: New CLI tool `generate_custom_lattice_job.py` for easy job generation
+- **Tests**: Comprehensive test suite for custom lattice features

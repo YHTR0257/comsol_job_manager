@@ -50,6 +50,7 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints
+notebooks/
 
 # Notebooks
 *.ipynb
@@ -57,6 +58,7 @@ Thumbs.db
 # Jobs directory (local job storage)
 jobs/
 jobs
+data/
 
 # Java build / cache / artifacts
 *.class
