@@ -11,12 +11,12 @@ class TestGeometryValidator:
     def test_valid_geometry_passes(self):
         """Test that valid geometry passes validation."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.2, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.2, position=[1.0, 0.0, 0.0]),
             ],
-            beam=[
+            beams=[
                 Beam(id=1, endpoints=[1, 2], thickness=0.1)
             ]
         )
@@ -30,12 +30,12 @@ class TestGeometryValidator:
     def test_overlapping_spheres_detected(self):
         """Test detection of overlapping spheres."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.5, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.5, position=[0.5, 0.0, 0.0]),  # Overlaps with sphere 1
             ],
-            beam=[]
+            beams=[]
         )
 
         validator = GeometryValidator()
@@ -49,12 +49,12 @@ class TestGeometryValidator:
     def test_touching_spheres_allowed(self):
         """Test that spheres that just touch are allowed."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.5, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.5, position=[1.0, 0.0, 0.0]),  # Exactly touching
             ],
-            beam=[]
+            beams=[]
         )
 
         validator = GeometryValidator()
@@ -66,12 +66,12 @@ class TestGeometryValidator:
     def test_beam_connection_validation(self):
         """Test beam connection validation."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.1, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.1, position=[1.0, 0.0, 0.0]),
             ],
-            beam=[
+            beams=[
                 Beam(id=1, endpoints=[1, 2], thickness=0.05)
             ]
         )
@@ -85,12 +85,12 @@ class TestGeometryValidator:
     def test_beam_with_overlapping_spheres_detected(self):
         """Test detection of beam connecting overlapping spheres."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.6, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.6, position=[0.5, 0.0, 0.0]),  # Overlapping
             ],
-            beam=[
+            beams=[
                 Beam(id=1, endpoints=[1, 2], thickness=0.05)
             ]
         )
@@ -103,53 +103,15 @@ class TestGeometryValidator:
         # Should have errors about either overlap or penetration
         assert len(result.errors) > 0
 
-    def test_zero_lattice_vector_warning(self):
-        """Test warning for near-zero lattice vector."""
-        geometry = Geometry(
-            lattice_vector=[[0.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
-                Sphere(id=1, radius=0.2, position=[0.0, 0.0, 0.0]),
-            ],
-            beam=[]
-        )
-
-        validator = GeometryValidator()
-        result = validator.validate(geometry)
-
-        # Should have warning about zero vector
-        assert len(result.warnings) > 0
-        assert any('zero' in warn.error_type.lower() for warn in result.warnings)
-
-    def test_coplanar_lattice_vectors_warning(self):
-        """Test warning for coplanar lattice vectors."""
-        geometry = Geometry(
-            lattice_vector=[
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [1.0, 1.0, 0.0]  # Coplanar with the other two
-            ],
-            sphere=[
-                Sphere(id=1, radius=0.2, position=[0.0, 0.0, 0.0]),
-            ],
-            beam=[]
-        )
-
-        validator = GeometryValidator()
-        result = validator.validate(geometry)
-
-        # Should have warning about coplanar vectors
-        assert len(result.warnings) > 0
-        assert any('coplanar' in warn.error_type.lower() for warn in result.warnings)
-
     def test_validation_result_summary(self):
         """Test validation result summary generation."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.5, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.5, position=[0.5, 0.0, 0.0]),  # Overlapping
             ],
-            beam=[]
+            beams=[]
         )
 
         validator = GeometryValidator()
@@ -163,13 +125,13 @@ class TestGeometryValidator:
     def test_multiple_overlapping_spheres(self):
         """Test detection of multiple overlapping sphere pairs."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.5, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.5, position=[0.5, 0.0, 0.0]),  # Overlaps with 1
                 Sphere(id=3, radius=0.5, position=[0.0, 0.5, 0.0]),  # Overlaps with 1
             ],
-            beam=[]
+            beams=[]
         )
 
         validator = GeometryValidator()
@@ -183,12 +145,12 @@ class TestGeometryValidator:
     def test_custom_tolerance(self):
         """Test validator with custom tolerance."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.5, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.5, position=[0.99, 0.0, 0.0]),  # Overlapping by 0.01
             ],
-            beam=[]
+            beams=[]
         )
 
         # With default tolerance (1e-6), should detect overlap
@@ -205,12 +167,12 @@ class TestGeometryValidator:
     def test_geometry_with_no_beams(self):
         """Test geometry validation with no beams."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.2, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.2, position=[1.0, 0.0, 0.0]),
             ],
-            beam=[]
+            beams=[]
         )
 
         validator = GeometryValidator()
@@ -222,12 +184,12 @@ class TestGeometryValidator:
     def test_3d_diagonal_distance(self):
         """Test distance calculation in 3D."""
         geometry = Geometry(
-            lattice_vector=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
-            sphere=[
+            lattice_constant=1.0,
+            spheres=[
                 Sphere(id=1, radius=0.1, position=[0.0, 0.0, 0.0]),
                 Sphere(id=2, radius=0.1, position=[1.0, 1.0, 1.0]),  # sqrt(3) away
             ],
-            beam=[]
+            beams=[]
         )
 
         validator = GeometryValidator()
@@ -235,3 +197,87 @@ class TestGeometryValidator:
 
         # Spheres should not overlap (distance = sqrt(3) ≈ 1.73, sum of radii = 0.2)
         assert result.is_valid
+
+    def test_global_beam_radius_constraint_passes(self):
+        """Test that valid beam-sphere configuration passes global constraint."""
+        geometry = Geometry(
+            lattice_constant=1.0,
+            spheres=[
+                Sphere(id=1, radius=0.2, position=[0.0, 0.0, 0.0]),  # min radius = 0.2
+                Sphere(id=2, radius=0.3, position=[1.0, 0.0, 0.0]),
+                Sphere(id=3, radius=0.25, position=[0.0, 1.0, 0.0]),
+            ],
+            beams=[
+                Beam(id=1, endpoints=[1, 2], thickness=0.1),  # radius = 0.05
+                Beam(id=2, endpoints=[2, 3], thickness=0.3),  # radius = 0.15, max radius
+            ]
+        )
+
+        validator = GeometryValidator()
+        result = validator.validate(geometry)
+
+        # Should pass: max_beam_radius (0.15) < min_sphere_radius (0.2) - 0.01 (0.19)
+        assert result.is_valid
+        assert len(result.errors) == 0
+
+    def test_global_beam_radius_constraint_fails(self):
+        """Test that invalid beam-sphere configuration fails global constraint."""
+        geometry = Geometry(
+            lattice_constant=1.0,
+            spheres=[
+                Sphere(id=1, radius=0.15, position=[0.0, 0.0, 0.0]),  # min radius = 0.15
+                Sphere(id=2, radius=0.3, position=[1.0, 0.0, 0.0]),
+                Sphere(id=3, radius=0.25, position=[0.0, 1.0, 0.0]),
+            ],
+            beams=[
+                Beam(id=1, endpoints=[1, 2], thickness=0.1),  # radius = 0.05
+                Beam(id=2, endpoints=[2, 3], thickness=0.3),  # radius = 0.15, max radius
+            ]
+        )
+
+        validator = GeometryValidator()
+        result = validator.validate(geometry)
+
+        # Should fail: max_beam_radius (0.15) > min_sphere_radius (0.15) - 0.01 (0.14)
+        assert not result.is_valid
+        assert len(result.errors) > 0
+        assert any('insufficient_global_sphere_beam_difference' in err.error_type for err in result.errors)
+
+    def test_global_beam_radius_constraint_boundary(self):
+        """Test global constraint at the boundary (exactly 0.01mm difference)."""
+        geometry = Geometry(
+            lattice_constant=1.0,
+            spheres=[
+                Sphere(id=1, radius=0.16, position=[0.0, 0.0, 0.0]),  # min radius = 0.16
+                Sphere(id=2, radius=0.3, position=[1.0, 0.0, 0.0]),
+            ],
+            beams=[
+                Beam(id=1, endpoints=[1, 2], thickness=0.3),  # radius = 0.15, exactly at boundary
+            ]
+        )
+
+        validator = GeometryValidator()
+        result = validator.validate(geometry)
+
+        # Should pass: max_beam_radius (0.15) = min_sphere_radius (0.16) - 0.01 (0.15)
+        assert result.is_valid
+
+    def test_global_beam_radius_with_parametric_elements(self):
+        """Test that global check skips geometries with undefined parameters."""
+        geometry = Geometry(
+            lattice_constant=1.0,
+            spheres=[
+                Sphere(id=1, radius=None, position=[0.0, 0.0, 0.0]),  # Parametric
+                Sphere(id=2, radius=0.3, position=[1.0, 0.0, 0.0]),
+            ],
+            beams=[
+                Beam(id=1, endpoints=[1, 2], thickness=0.1),
+            ]
+        )
+
+        validator = GeometryValidator()
+        result = validator.validate(geometry)
+
+        # Should skip global check and not report global constraint error
+        # (may have warnings about undefined parameters)
+        assert not any('insufficient_global_sphere_beam_difference' in err.error_type for err in result.errors)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, Template
 
@@ -30,7 +30,8 @@ class JobGenerator:
         self,
         template_dir: Path | str,
         output_base_dir: Path | str,
-        num_cores: int = 4 # Default to 4 cores
+        num_cores: int = 4, # Default to 4 cores
+        save_mph: bool = True # Default to save mph files
     ):
         """Initialize job generator.
 
@@ -39,10 +40,12 @@ class JobGenerator:
                          (must contain simulation.java.j2 and run.bat.j2)
             output_base_dir: Base directory for job outputs
             num_cores: Number of CPU cores to use for COMSOL batch jobs
+            save_mph: Whether to save .mph files after execution
         """
         self.template_dir = Path(template_dir)
         self.output_base_dir = Path(output_base_dir)
         self.num_cores = num_cores
+        self.save_mph = save_mph
 
         # Setup Jinja2 environment with custom delimiters from config
         # This avoids conflicts with Java/C++ code syntax ({{, }})
@@ -172,7 +175,8 @@ class JobGenerator:
         job_dir: Path,
         java_file_path: Path,
         java_class_name: Optional[str] = None,
-        num_cores: int = 1
+        num_cores: int = 1,
+        save_mph: Optional[bool] = None
     ) -> Path:
         """Generate Windows batch file to run COMSOL using Jinja2 template.
 
@@ -181,11 +185,16 @@ class JobGenerator:
             java_file_path: Path to generated Java file
             java_class_name: Java class name (default: inferred from file)
             num_cores: Number of CPU cores to use for batch job
+            save_mph: Whether to save .mph files (default: use instance setting)
         Returns:
             Path to generated batch file
         """
         if java_class_name is None:
             java_class_name = java_file_path.stem
+
+        # Use instance save_mph setting if not explicitly provided
+        if save_mph is None:
+            save_mph = self.save_mph
 
         # Load template
         template = self.jinja_env.get_template('run.bat.j2')
@@ -205,7 +214,8 @@ class JobGenerator:
             'class_name': java_class_name,
             'output_file': f"{java_class_name}.mph",
             'generated_at': datetime.now().isoformat(),
-            'num_cores': num_cores
+            'num_cores': num_cores,
+            'save_mph': save_mph
         }
 
         # Render template
@@ -253,13 +263,15 @@ class JobGenerator:
     def generate_job(
         self,
         params: Dict[str, Any],
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
+        save_mph: Optional[bool] = None
     ) -> Dict[str, Path]:
         """Generate complete job with all necessary files.
 
         Args:
             params: Simulation parameters
             job_id: Optional job ID (auto-generated if None)
+            save_mph: Whether to save .mph files (default: use instance setting)
 
         Returns:
             Dictionary with paths to generated files:
@@ -283,7 +295,8 @@ class JobGenerator:
             job_dir,
             java_file,
             java_class_name=java_file.stem,
-            num_cores=self.num_cores
+            num_cores=self.num_cores,
+            save_mph=save_mph
         )
         config_file = self.generate_config_file(job_dir, params)
 
@@ -302,7 +315,8 @@ class JobGenerator:
         custom_job: 'CustomLatticeJob',
         job_id: Optional[str] = None,
         run_id: Optional[str] = None,
-        param_set: Optional['ParameterSet'] = None
+        param_set: Optional['ParameterSet'] = None,
+        save_mph: Optional[bool] = None
     ) -> Dict[str, Any]:
         """Generate job for custom lattice structure.
 
@@ -311,6 +325,7 @@ class JobGenerator:
             job_id: Optional specific job ID (for parametric sweeps)
             run_id: Optional run ID for grouping multiple jobs
             param_set: Optional parameter set to apply (for parametric sweeps)
+            save_mph: Whether to save .mph files (default: use instance setting)
 
         Returns:
             Dictionary with paths to generated files and metadata
@@ -337,7 +352,7 @@ class JobGenerator:
         job_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate Java file from custom lattice template
-        java_file = self._generate_custom_lattice_java(
+        java_file, geometry_data = self._generate_custom_lattice_java(
             job_dir,
             custom_job,
             job_id,
@@ -349,14 +364,17 @@ class JobGenerator:
             job_dir,
             java_file,
             java_class_name=java_file.stem,
-            num_cores=self.num_cores
+            num_cores=self.num_cores,
+            save_mph=save_mph
         )
 
         # Generate metadata file for this job
         metadata_file = self._generate_job_metadata(
             job_dir,
             custom_job,
-            job_id
+            job_id,
+            param_set,
+            geometry_data
         )
 
         result = {
@@ -378,7 +396,7 @@ class JobGenerator:
         custom_job: 'CustomLatticeJob',
         job_id: str,
         param_set: Optional['ParameterSet'] = None
-    ) -> Path:
+    ) -> 'Tuple[Path, GeometryData]':
         """Generate Java file for custom lattice from template.
 
         Args:
@@ -388,7 +406,7 @@ class JobGenerator:
             param_set: Optional parameter set to apply (for parametric sweeps)
 
         Returns:
-            Path to generated Java file
+            Tuple of (Path to generated Java file, GeometryData with calculated dimensions)
         """
         from ..services.geometry_builder import GeometryBuilder, ParameterSet
 
@@ -511,13 +529,15 @@ class JobGenerator:
             f.write(java_content)
 
         _logger.info(f"Generated custom lattice Java file: {java_file_path}")
-        return java_file_path
+        return java_file_path, geometry_data
 
     def _generate_job_metadata(
         self,
         job_dir: Path,
         custom_job: 'CustomLatticeJob',
-        job_id: str
+        job_id: str,
+        param_set: Optional['ParameterSet'] = None,
+        geometry_data: Optional['GeometryData'] = None
     ) -> Path:
         """Generate metadata YAML file for the job.
 
@@ -525,6 +545,8 @@ class JobGenerator:
             job_dir: Job directory
             custom_job: CustomLatticeJob definition
             job_id: Job identifier
+            param_set: Optional parameter set that was applied
+            geometry_data: Optional geometry data with calculated dimensions
 
         Returns:
             Path to metadata file
@@ -547,6 +569,36 @@ class JobGenerator:
             }
         }
 
+        # Add applied parameters if available
+        if param_set is not None:
+            metadata['parametric']['applied_parameters'] = param_set.parameters
+            # Convert tuple to list for YAML compatibility
+            metadata['parametric']['sweep_indices'] = list(param_set.sweep_indices) if param_set.sweep_indices else []
+
+        # Add calculated geometry dimensions if available
+        if geometry_data is not None:
+            # Calculate sphere radius range
+            sphere_radii = [s.radius for s in geometry_data.spheres]
+            beam_thicknesses = [b.thickness for b in geometry_data.beams]
+
+            metadata['calculated_dimensions'] = {
+                'sphere_radius': {
+                    'min': min(sphere_radii) if sphere_radii else None,
+                    'max': max(sphere_radii) if sphere_radii else None,
+                    'mean': sum(sphere_radii) / len(sphere_radii) if sphere_radii else None,
+                },
+                'beam_thickness': {
+                    'min': min(beam_thicknesses) if beam_thicknesses else None,
+                    'max': max(beam_thicknesses) if beam_thicknesses else None,
+                    'mean': sum(beam_thicknesses) / len(beam_thicknesses) if beam_thicknesses else None,
+                },
+                'beam_radius': {
+                    'min': min(beam_thicknesses) / 2.0 if beam_thicknesses else None,
+                    'max': max(beam_thicknesses) / 2.0 if beam_thicknesses else None,
+                    'mean': sum(beam_thicknesses) / (2.0 * len(beam_thicknesses)) if beam_thicknesses else None,
+                }
+            }
+
         metadata_path = job_dir / "metadata.yml"
         with open(metadata_path, 'w', encoding='utf-8') as f:
             yaml.dump(metadata, f, default_flow_style=False, allow_unicode=True)
@@ -557,13 +609,15 @@ class JobGenerator:
     def generate_parametric_study_jobs(
         self,
         custom_job: 'CustomLatticeJob',
-        run_id: Optional[str] = None
+        run_id: Optional[str] = None,
+        save_mph: Optional[bool] = None
     ) -> Dict[str, Any]:
         """Generate all jobs for a parametric study.
 
         Args:
             custom_job: CustomLatticeJob definition
             run_id: Optional run ID (auto-generated if None)
+            save_mph: Whether to save .mph files (default: use instance setting)
 
         Returns:
             Dictionary with run information and list of generated jobs
@@ -604,24 +658,31 @@ class JobGenerator:
             yaml.dump(run_metadata, f, default_flow_style=False, allow_unicode=True)
 
         # Generate each job
+        # Use a counter for successful jobs only
         jobs = []
         skipped_jobs = []
+        successful_job_counter = 1
+
         for i, param_set in enumerate(param_sets, 1):
             try:
-                # Generate job
+                # Generate job with renumbered job_id based on successful jobs only
+                actual_job_id = f"job_{successful_job_counter:03d}"
                 result = self.generate_custom_lattice_job(
                     custom_job,
-                    job_id=param_set.job_id,
+                    job_id=actual_job_id,
                     run_id=run_id,
-                    param_set=param_set
+                    param_set=param_set,
+                    save_mph=save_mph
                 )
                 jobs.append(result)
-                _logger.info(f"Generated job {i}/{len(param_sets)}: {param_set.job_id}")
+                _logger.info(f"Generated job {successful_job_counter}/{len(param_sets)}: {actual_job_id}")
+                successful_job_counter += 1  # Only increment on success
             except ValueError as e:
-                # Skip jobs with validation errors
-                _logger.warning(f"Skipping job {param_set.job_id} due to validation error: {e}")
+                # Skip jobs with validation errors - do not increment counter
+                _logger.warning(f"Skipping parameter set {i} due to validation error: {e}")
                 skipped_jobs.append({
-                    'job_id': param_set.job_id,
+                    'parameter_set_index': i,
+                    'original_job_id': param_set.job_id,
                     'error': str(e),
                     'parameters': param_set.parameters
                 })

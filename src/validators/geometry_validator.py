@@ -247,60 +247,61 @@ class GeometryValidator:
         spheres: List[Sphere],
         beams: List[Beam]
     ) -> List[ValidationError]:
-        """Check if beam thickness exceeds sphere radius at endpoints.
+        """Check if maximum beam radius exceeds minimum sphere radius threshold.
 
-        A beam that is thicker than the sphere radius at its endpoints
-        would create an invalid geometry where the beam is larger than
-        the sphere it connects to.
+        Validates that the maximum beam radius across all beams does not exceed
+        the minimum sphere radius minus a safety margin of 0.01mm. This ensures
+        all beams can safely connect to all spheres without geometry errors.
+
+        Condition: max(beam_radius) <= min(sphere_radius) - 0.01mm
 
         Args:
             spheres: List of sphere definitions
             beams: List of beam definitions
 
         Returns:
-            List of validation errors for beams thicker than their endpoint spheres
+            List of validation errors if the global constraint is violated
         """
         errors = []
-        sphere_dict = {s.id: s for s in spheres}
+        MIN_DIFFERENCE = 0.01  # Minimum required difference in mm
 
-        for beam in beams:
-            s1_id, s2_id = beam.endpoints
-            s1 = sphere_dict.get(s1_id)
-            s2 = sphere_dict.get(s2_id)
+        # Collect all defined sphere radii
+        sphere_radii = [s.radius for s in spheres if s.radius is not None]
 
-            if not s1 or not s2:
-                # Endpoint sphere not found - this should be caught elsewhere
-                continue
+        # Collect all defined beam radii (thickness / 2)
+        beam_radii = [b.thickness / 2.0 for b in beams if b.thickness is not None]
 
-            # Skip if any parameter is undefined (parametric definition)
-            if beam.thickness is None or s1.radius is None or s2.radius is None:
-                continue
+        # Skip check if no fully defined spheres or beams
+        if not sphere_radii or not beam_radii:
+            return errors
 
-            # Beam thickness should not exceed sphere radius
-            # (beam radius = thickness / 2, so we compare thickness to 2 * sphere_radius)
-            if beam.thickness > 2 * s1.radius + self.tolerance:
-                errors.append(ValidationError(
-                    error_type='beam_thicker_than_sphere',
-                    message=(
-                        f"Beam {beam.id} thickness ({beam.thickness:.4f}) exceeds "
-                        f"2x sphere {s1_id} radius ({2 * s1.radius:.4f}). "
-                        f"Beam would be wider than the sphere."
-                    ),
-                    element_ids=[beam.id, s1_id],
-                    severity='error'
-                ))
+        # Find maximum beam radius and minimum sphere radius
+        max_beam_radius = max(beam_radii)
+        min_sphere_radius = min(sphere_radii)
 
-            if beam.thickness > 2 * s2.radius + self.tolerance:
-                errors.append(ValidationError(
-                    error_type='beam_thicker_than_sphere',
-                    message=(
-                        f"Beam {beam.id} thickness ({beam.thickness:.4f}) exceeds "
-                        f"2x sphere {s2_id} radius ({2 * s2.radius:.4f}). "
-                        f"Beam would be wider than the sphere."
-                    ),
-                    element_ids=[beam.id, s2_id],
-                    severity='error'
-                ))
+        # Find which beam has the maximum radius (for error reporting)
+        max_beam = next(b for b in beams if b.thickness is not None and b.thickness / 2.0 == max_beam_radius)
+
+        # Find which sphere has the minimum radius (for error reporting)
+        min_sphere = next(s for s in spheres if s.radius is not None and s.radius == min_sphere_radius)
+
+        # Check global constraint: max(beam_radius) + MIN_DIFFERENCE <= min(sphere_radius)
+        required_min_sphere_radius = max_beam_radius + MIN_DIFFERENCE
+
+        if max_beam_radius > min_sphere_radius - MIN_DIFFERENCE + self.tolerance:
+            errors.append(ValidationError(
+                error_type='insufficient_global_sphere_beam_difference',
+                message=(
+                    f"Maximum beam radius ({max_beam_radius:.4f} mm, beam {max_beam.id}) "
+                    f"exceeds minimum sphere radius ({min_sphere_radius:.4f} mm, sphere {min_sphere.id}) "
+                    f"minus safety margin. Required: max_beam_radius <= min_sphere_radius - {MIN_DIFFERENCE} mm. "
+                    f"Current difference: {min_sphere_radius - max_beam_radius:.4f} mm, "
+                    f"required difference: >= {MIN_DIFFERENCE} mm. "
+                    f"This may cause geometry errors in COMSOL."
+                ),
+                element_ids=[max_beam.id, min_sphere.id],
+                severity='error'
+            ))
 
         return errors
 
