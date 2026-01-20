@@ -101,6 +101,12 @@ Examples:
         help='Number of CPU cores to use for COMSOL batch jobs (default: 4)'
     )
 
+    parser.add_argument(
+        '--no-save-mph',
+        action='store_true',
+        help='Do not save .mph files (saves disk space)'
+    )
+
     args = parser.parse_args()
 
     # Print header
@@ -171,7 +177,8 @@ Examples:
         job_gen = JobGenerator(
             template_dir=args.template_dir,
             output_base_dir=args.output,
-            num_cores=args.num_cores
+            num_cores=args.num_cores,
+            save_mph=not args.no_save_mph
         )
     except Exception as e:
         print(f"✗ Failed to initialize job generator:")
@@ -203,6 +210,7 @@ Examples:
     print(f"  Run ID: {result['run_id']}")
     print(f"  Run directory: {result['run_dir']}")
     print(f"  Jobs generated: {result['total_jobs']}")
+    print(f"  Save .mph files: {'No' if args.no_save_mph else 'Yes'}")
     if result.get('skipped_jobs', 0) > 0:
         print(f"  Jobs skipped: {result['skipped_jobs']}")
         print(f"  (See {result['run_dir']}/metadata.yml for details)")
