@@ -1,0 +1,137 @@
+job:
+  name: "FCC Lattice"
+  description: "Face-Centered Cubic lattice with first and second nearest neighbor beams"
+  unit_cell_size: [15.0, 15.0, 15.0]  # mm単位 [Lx, Ly, Lz]
+
+  parametric:
+    default:
+      sphere.radius: 2.5           # 全球のデフォルト半径 (mm)
+      beam.thickness: 5.0          # 第一近接ビームのデフォルト太さ (mm)
+
+    sweeps:
+    # 全球の半径: 0.5mm から 5.3mm まで 0.2mm 刻み (25個)
+    - parameter: "sphere.radius"
+      values: [0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9, 2.1, 2.3, 2.5, 2.7,
+               2.9, 3.1, 3.3, 3.5, 3.7, 3.9, 4.1, 4.3, 4.5, 4.7, 4.9, 5.1, 5.3]
+
+    # 第一近接ビームの太さ: 1.0mm から 10.6mm まで 0.4mm 刻み (25個)
+    - parameter: "beam.thickness"
+      values: [1.0, 1.4, 1.8, 2.2, 2.6, 3.0, 3.4, 3.8, 4.2, 4.6, 5.0, 5.4,
+               5.8, 6.2, 6.6, 7.0, 7.4, 7.8, 8.2, 8.6, 9.0, 9.4, 9.8, 10.2, 10.6]
+geometry:
+  lattice_constant: 15.0  # mm (単位胞の一辺の長さ)
+
+  spheres:
+    # 8個の角の球 (corners)
+    - {id: 1,  position: [0.0, 0.0, 0.0],  ratio: 1.0}   # corner 1
+    - {id: 2,  position: [15.0, 0.0, 0.0],  ratio: 1.0}   # corner 2
+    - {id: 3,  position: [0.0, 15.0, 0.0],  ratio: 1.0}   # corner 3
+    - {id: 4,  position: [15.0, 15.0, 0.0],  ratio: 1.0}   # corner 4
+    - {id: 5,  position: [0.0, 0.0, 15.0], ratio: 1.0}   # corner 5
+    - {id: 6,  position: [15.0, 0.0, 15.0], ratio: 1.0}   # corner 6
+    - {id: 7,  position: [0.0, 15.0, 15.0], ratio: 1.0}   # corner 7
+    - {id: 8,  position: [15.0, 15.0, 15.0], ratio: 1.0}   # corner 8
+
+    # 6個の面心の球 (face centers)
+    - {id: 9,  position: [7.5, 7.5, 0.0],  ratio: 1.0}   # bottom face center (z=0)
+    - {id: 10, position: [7.5, 7.5, 15.0], ratio: 1.0}   # top face center (z=15)
+    - {id: 11, position: [0.0, 7.5, 7.5],  ratio: 1.0}   # front face center (x=0)
+    - {id: 12, position: [15.0, 7.5, 7.5], ratio: 1.0}   # back face center (x=15)
+    - {id: 13, position: [7.5, 0.0, 7.5],  ratio: 1.0}   # left face center (y=0)
+    - {id: 14, position: [7.5, 15.0, 7.5], ratio: 1.0}   # right face center (y=15)
+
+  beams:
+    # 第一近接ビーム (First nearest neighbors) - 36本
+    # Part 1: 面心から角への接続 (24本)
+    # 底面中心(id=9)から4つの角へ
+    - {id: 1,  endpoints: [9, 1],  ratio: 1.0}   # bottom center -> corner 1
+    - {id: 2,  endpoints: [9, 2],  ratio: 1.0}   # bottom center -> corner 2
+    - {id: 3,  endpoints: [9, 3],  ratio: 1.0}   # bottom center -> corner 3
+    - {id: 4,  endpoints: [9, 4],  ratio: 1.0}   # bottom center -> corner 4
+
+    # 上面中心(id=10)から4つの角へ
+    - {id: 5,  endpoints: [10, 5], ratio: 1.0}   # top center -> corner 5
+    - {id: 6,  endpoints: [10, 6], ratio: 1.0}   # top center -> corner 6
+    - {id: 7,  endpoints: [10, 7], ratio: 1.0}   # top center -> corner 7
+    - {id: 8,  endpoints: [10, 8], ratio: 1.0}   # top center -> corner 8
+
+    # 前面中心(id=11, x=0)から4つの角へ
+    - {id: 9,  endpoints: [11, 1], ratio: 1.0}   # front center -> corner 1
+    - {id: 10, endpoints: [11, 3], ratio: 1.0}   # front center -> corner 3
+    - {id: 11, endpoints: [11, 5], ratio: 1.0}   # front center -> corner 5
+    - {id: 12, endpoints: [11, 7], ratio: 1.0}   # front center -> corner 7
+
+    # 後面中心(id=12, x=10)から4つの角へ
+    - {id: 13, endpoints: [12, 2], ratio: 1.0}   # back center -> corner 2
+    - {id: 14, endpoints: [12, 4], ratio: 1.0}   # back center -> corner 4
+    - {id: 15, endpoints: [12, 6], ratio: 1.0}   # back center -> corner 6
+    - {id: 16, endpoints: [12, 8], ratio: 1.0}   # back center -> corner 8
+
+    # 左面中心(id=13, y=0)から4つの角へ
+    - {id: 17, endpoints: [13, 1], ratio: 1.0}   # left center -> corner 1
+    - {id: 18, endpoints: [13, 2], ratio: 1.0}   # left center -> corner 2
+    - {id: 19, endpoints: [13, 5], ratio: 1.0}   # left center -> corner 5
+    - {id: 20, endpoints: [13, 6], ratio: 1.0}   # left center -> corner 6
+
+    # 右面中心(id=14, y=10)から4つの角へ
+    - {id: 21, endpoints: [14, 3], ratio: 1.0}   # right center -> corner 3
+    - {id: 22, endpoints: [14, 4], ratio: 1.0}   # right center -> corner 4
+    - {id: 23, endpoints: [14, 7], ratio: 1.0}   # right center -> corner 7
+    - {id: 24, endpoints: [14, 8], ratio: 1.0}   # right center -> corner 8
+
+    # Part 2: 面心同士の接続 (12本)
+    # 底面中心と4つの側面中心
+    - {id: 25, endpoints: [9, 11],  ratio: 1.0}   # bottom center <-> front center
+    - {id: 26, endpoints: [9, 12],  ratio: 1.0}   # bottom center <-> back center
+    - {id: 27, endpoints: [9, 13],  ratio: 1.0}   # bottom center <-> left center
+    - {id: 28, endpoints: [9, 14],  ratio: 1.0}   # bottom center <-> right center
+
+    # 上面中心と4つの側面中心
+    - {id: 29, endpoints: [10, 11], ratio: 1.0}   # top center <-> front center
+    - {id: 30, endpoints: [10, 12], ratio: 1.0}   # top center <-> back center
+    - {id: 31, endpoints: [10, 13], ratio: 1.0}   # top center <-> left center
+    - {id: 32, endpoints: [10, 14], ratio: 1.0}   # top center <-> right center
+
+    # 側面中心間(正方形を形成)
+    - {id: 33, endpoints: [11, 13], ratio: 1.0}   # front center <-> left center
+    - {id: 34, endpoints: [11, 14], ratio: 1.0}   # front center <-> right center
+    - {id: 35, endpoints: [12, 13], ratio: 1.0}   # back center <-> left center
+    - {id: 36, endpoints: [12, 14], ratio: 1.0}   # back center <-> right center
+
+    # 第二近接ビーム (Second nearest neighbors - 立方体の12本の辺) - 12本
+    # 底面の辺 (z=0)
+    - {id: 37, endpoints: [1, 2],  ratio: 0.836}   # bottom edge X direction (y=0, z=0)
+    - {id: 38, endpoints: [3, 4],  ratio: 0.836}   # bottom edge X direction (y=10, z=0)
+    - {id: 39, endpoints: [1, 3],  ratio: 0.836}   # bottom edge Y direction (x=0, z=0)
+    - {id: 40, endpoints: [2, 4],  ratio: 0.836}   # bottom edge Y direction (x=10, z=0)
+
+    # 上面の辺 (z=10)
+    - {id: 41, endpoints: [5, 6],  ratio: 0.836}   # top edge X direction (y=0, z=10)
+    - {id: 42, endpoints: [7, 8],  ratio: 0.836}   # top edge X direction (y=10, z=10)
+    - {id: 43, endpoints: [5, 7],  ratio: 0.836}   # top edge Y direction (x=0, z=10)
+    - {id: 44, endpoints: [6, 8],  ratio: 0.836}   # top edge Y direction (x=10, z=10)
+
+    # 縦の辺 (Z direction, connecting bottom to top)
+    - {id: 45, endpoints: [1, 5],  ratio: 0.836}   # vertical edge (x=0, y=0)
+    - {id: 46, endpoints: [2, 6],  ratio: 0.836}   # vertical edge (x=10, y=0)
+    - {id: 47, endpoints: [3, 7],  ratio: 0.836}   # vertical edge (x=0, y=10)
+    - {id: 48, endpoints: [4, 8],  ratio: 0.836}   # vertical edge (x=10, y=10)
+
+materials:
+  mat1:
+    name: "Polymer"
+    youngs_modulus: 33.6e6    # Pa (33.6 MPa)
+    poissons_ratio: 0.4     # 無次元
+    density: 950            # kg/m³
+
+mesh:
+  size: 5                   # autoMeshSize(5)
+  type: "FreeTri"           # 現状未使用（将来拡張用）
+
+study:
+  strain:
+    delta: 0.01                        # 最大歪み（1%）
+    steps: "0, 0.25, 0.5, 0.75, 1"    # 変位ステップ
+  boundary_conditions:
+    fixed: true      # 原点固定
+    copyface: true   # 周期境界条件

@@ -85,7 +85,6 @@ public class << class_name >> {
         double youngModulus = << youngs_modulus >>;
         double density = << density >>;
         double lconst = << lattice_constant >>;
-        double rs = << default_sphere_radius >>;
         String[] strainParams = null;
 
         try {
@@ -108,6 +107,7 @@ public class << class_name >> {
 
         double[][] points = null;
         double[][][] lines = null;
+        double[] sphereRadii = null;
         double[] beamThicknesses = null;
 
         try {
@@ -133,11 +133,20 @@ public class << class_name >> {
             // Unit cell size
             uni_size = new double[]{<< geometry.unit_cell_size[0] >>, << geometry.unit_cell_size[1] >>, << geometry.unit_cell_size[2] >>};
 
+            // Sphere radii for each sphere
+            sphereRadii = new double[]{
+<% for sphere in geometry.spheres -%>
+                << sphere.radius >><% if not loop.last %>, <% endif %><% if loop.index0 % 10 == 9 and not loop.last %>
+                <% endif %>
+<%- endfor %>
+            };
+
             // Beam thicknesses (diameter) for each beam
             beamThicknesses = new double[]{
-<% for beam in geometry.beams %>
-                << beam.thickness >><% if not loop.last %>,<% endif %>  // beam_<< "%03d"|format(beam.id) >>
-<% endfor %>
+<% for beam in geometry.beams -%>
+                << beam.thickness >><% if not loop.last %>, <% endif %><% if loop.index0 % 10 == 9 and not loop.last %>
+                <% endif %>
+<%- endfor %>
             };
         } catch (Exception e) {
             String errorMsg = "ERROR in STEP 1 (Setting up geometry data): " + e.getMessage();
@@ -165,7 +174,7 @@ public class << class_name >> {
 
         try {
             log("STEP 3: Setting parameters");
-            setupParameters(model, uni_size, lconst, rs, delta_);
+            setupParameters(model, uni_size, lconst, delta_);
             log("Parameters configured");
         } catch (Exception e) {
             String errorMsg = "ERROR in STEP 3 (Setting parameters): " + e.getMessage();
@@ -203,7 +212,7 @@ public class << class_name >> {
 
         try {
             log("STEP 6: Creating geometry");
-            model = geometry(model, uni_size, points, lines, beamThicknesses);
+            model = geometry(model, uni_size, points, sphereRadii, lines, beamThicknesses);
             log("Geometry created successfully");
         } catch (Exception e) {
             String errorMsg = "ERROR in STEP 6 (Creating geometry): " + e.getMessage();
@@ -399,23 +408,20 @@ public class << class_name >> {
     }
 
     /**
-     * Sets up model parameters including dimensions, radii, and strain components.
+     * Sets up model parameters including dimensions, and strain components.
      *
      * @param model the COMSOL model
      * @param uni_size unit cell dimensions [Lx, Ly, Lz]
-     * @param rs sphere radius (default)
+     * @param lconst lattice constant
      * @param delta_ delta parameter for strain
      */
-    private static void setupParameters(Model model, double[] uni_size, double lconst, double rs, double delta_) {
+    private static void setupParameters(Model model, double[] uni_size, double lconst, double delta_) {
         log("  Setting unit cell dimensions: Lx=" + uni_size[0] + ", Ly=" + uni_size[1] + ", Lz=" + uni_size[2]);
         model.param().set("disp", "0");
         model.param().set("Lx", uni_size[0] + "[mm]");
         model.param().set("Ly", uni_size[1] + "[mm]");
         model.param().set("Lz", uni_size[2] + "[mm]");
         model.param().set("lconst", lconst + "[mm]");
-
-        log("  Setting default sphere radius: Rs=" + rs);
-        model.param().set("Rs", rs);
 
         log("  Setting strain tensor components (identity)");
         model.param().set("E11", 1);
@@ -466,7 +472,7 @@ public class << class_name >> {
      * @param beamThicknesses array of beam thicknesses (diameter) for each beam
      * @return the model with geometry created
      */
-    public static Model geometry(Model model, double[] uni_size, double[][] points, double[][][] lines, double[] beamThicknesses) {
+    public static Model geometry(Model model, double[] uni_size, double[][] points, double[] sphereRadii, double[][][] lines, double[] beamThicknesses) {
         log("  Creating geometry sequence");
         model.component("comp1").geom().create("geom1", 3);
         model.component("comp1").geom("geom1").lengthUnit("mm");
@@ -474,7 +480,7 @@ public class << class_name >> {
         // Create spheres
         log("  Creating " + points.length + " spheres");
         int numSpheres = points.length;
-        createSpheres(model, points);
+        createSpheres(model, points, sphereRadii);
 
         // Create beams using Sweep method (matching ref.java)
         log("  Creating " + lines.length + " beams using Sweep method");
@@ -503,14 +509,15 @@ public class << class_name >> {
      *
      * @param model the COMSOL model
      * @param points array of sphere positions [n][3] where each row is [x, y, z]
+     * @param sphereRadii array of radii for each sphere
      */
-    private static void createSpheres(Model model, double[][] points) {
+    private static void createSpheres(Model model, double[][] points, double[] sphereRadii) {
         int i = 0;
         for (double[] p : points) {
             String sph = "sph" + i;
             model.component("comp1").geom("geom1").create(sph, "Sphere");
             model.component("comp1").geom("geom1").feature(sph).set("pos", p);
-            model.component("comp1").geom("geom1").feature(sph).set("r", "Rs");
+            model.component("comp1").geom("geom1").feature(sph).set("r", sphereRadii[i]);
 
             if (i == 0) {
                 model.component("comp1").geom("geom1").create("uni1", "Union");
@@ -1058,15 +1065,24 @@ public class << class_name >> {
 
         // Build parametric sweep expressions (matching ref.java lines 395-403)
         // Each expression sums contributions from all 6 strain tensors
-        String e11 = e11_[0][0] + ddd + e22_[0][0] + ddd + e33_[0][0] + ddd + e23_[0][0] + ddd + e31_[0][0] + ddd + e12_[0][0] + ddd;
-        String e21 = e11_[0][1] + ddd + e22_[0][1] + ddd + e33_[0][1] + ddd + e23_[0][1] + ddd + e31_[0][1] + ddd + e12_[0][1] + ddd;
-        String e31 = e11_[0][2] + ddd + e22_[0][2] + ddd + e33_[0][2] + ddd + e23_[0][2] + ddd + e31_[0][2] + ddd + e12_[0][2] + ddd;
-        String e12 = e11_[1][0] + ddd + e22_[1][0] + ddd + e33_[1][0] + ddd + e23_[1][0] + ddd + e31_[1][0] + ddd + e12_[1][0] + ddd;
-        String e22 = e11_[1][1] + ddd + e22_[1][1] + ddd + e33_[1][1] + ddd + e23_[1][1] + ddd + e31_[1][1] + ddd + e12_[1][1] + ddd;
-        String e32 = e11_[1][2] + ddd + e22_[1][2] + ddd + e33_[1][2] + ddd + e23_[1][2] + ddd + e31_[1][2] + ddd + e12_[1][2] + ddd;
-        String e13 = e11_[2][0] + ddd + e22_[2][0] + ddd + e33_[2][0] + ddd + e23_[2][0] + ddd + e31_[2][0] + ddd + e12_[2][0] + ddd;
-        String e23 = e11_[2][1] + ddd + e22_[2][1] + ddd + e33_[2][1] + ddd + e23_[2][1] + ddd + e31_[2][1] + ddd + e12_[2][1] + ddd;
-        String e33 = e11_[2][2] + ddd + e22_[2][2] + ddd + e33_[2][2] + ddd + e23_[2][2] + ddd + e31_[2][2] + ddd + e12_[2][2] + ddd;
+        String e11 = e11_[0][0] + ddd + e22_[0][0] + ddd + e33_[0][0] + ddd
+                   + e23_[0][0] + ddd + e31_[0][0] + ddd + e12_[0][0] + ddd;
+        String e21 = e11_[0][1] + ddd + e22_[0][1] + ddd + e33_[0][1] + ddd
+                   + e23_[0][1] + ddd + e31_[0][1] + ddd + e12_[0][1] + ddd;
+        String e31 = e11_[0][2] + ddd + e22_[0][2] + ddd + e33_[0][2] + ddd
+                   + e23_[0][2] + ddd + e31_[0][2] + ddd + e12_[0][2] + ddd;
+        String e12 = e11_[1][0] + ddd + e22_[1][0] + ddd + e33_[1][0] + ddd
+                   + e23_[1][0] + ddd + e31_[1][0] + ddd + e12_[1][0] + ddd;
+        String e22 = e11_[1][1] + ddd + e22_[1][1] + ddd + e33_[1][1] + ddd
+                   + e23_[1][1] + ddd + e31_[1][1] + ddd + e12_[1][1] + ddd;
+        String e32 = e11_[1][2] + ddd + e22_[1][2] + ddd + e33_[1][2] + ddd
+                   + e23_[1][2] + ddd + e31_[1][2] + ddd + e12_[1][2] + ddd;
+        String e13 = e11_[2][0] + ddd + e22_[2][0] + ddd + e33_[2][0] + ddd
+                   + e23_[2][0] + ddd + e31_[2][0] + ddd + e12_[2][0] + ddd;
+        String e23 = e11_[2][1] + ddd + e22_[2][1] + ddd + e33_[2][1] + ddd
+                   + e23_[2][1] + ddd + e31_[2][1] + ddd + e12_[2][1] + ddd;
+        String e33 = e11_[2][2] + ddd + e22_[2][2] + ddd + e33_[2][2] + ddd
+                   + e23_[2][2] + ddd + e31_[2][2] + ddd + e12_[2][2] + ddd;
 
         // Study setup
         model.study("std1").label("Study 1");
@@ -1170,17 +1186,29 @@ public class << class_name >> {
         model.batch("p1").feature("so1")
              .set("param", new String[]{
                  // Case 1: Apply e11 strain tensor (matching ref.java line 463)
-                 "\"E11\",\"" + e11_[0][0] + dd + "\",\"E21\",\"" + e11_[0][1] + dd + "\",\"E31\",\"" + e11_[0][2] + dd + "\",\"E12\",\"" + e11_[1][0] + dd + "\",\"E22\",\"" + e11_[1][1] + dd + "\",\"E32\",\"" + e11_[1][2] + dd + "\",\"E13\",\"" + e11_[2][0] + dd + "\",\"E23\",\"" + e11_[2][1] + dd + "\",\"E33\",\"" + e11_[2][2] + dd + "\"",
+                 "\"E11\",\"" + e11_[0][0] + dd + "\",\"E21\",\"" + e11_[0][1] + dd + "\",\"E31\",\"" + e11_[0][2] + dd + "\"," +
+                 "\"E12\",\"" + e11_[1][0] + dd + "\",\"E22\",\"" + e11_[1][1] + dd + "\",\"E32\",\"" + e11_[1][2] + dd + "\"," +
+                 "\"E13\",\"" + e11_[2][0] + dd + "\",\"E23\",\"" + e11_[2][1] + dd + "\",\"E33\",\"" + e11_[2][2] + dd + "\"",
                  // Case 2: Apply e22 strain tensor (matching ref.java line 464)
-                 "\"E11\",\"" + e22_[0][0] + dd + "\",\"E21\",\"" + e22_[0][1] + dd + "\",\"E31\",\"" + e22_[0][2] + dd + "\",\"E12\",\"" + e22_[1][0] + dd + "\",\"E22\",\"" + e22_[1][1] + dd + "\",\"E32\",\"" + e22_[1][2] + dd + "\",\"E13\",\"" + e22_[2][0] + dd + "\",\"E23\",\"" + e22_[2][1] + dd + "\",\"E33\",\"" + e22_[2][2] + dd + "\"",
+                 "\"E11\",\"" + e22_[0][0] + dd + "\",\"E21\",\"" + e22_[0][1] + dd + "\",\"E31\",\"" + e22_[0][2] + dd + "\"," +
+                 "\"E12\",\"" + e22_[1][0] + dd + "\",\"E22\",\"" + e22_[1][1] + dd + "\",\"E32\",\"" + e22_[1][2] + dd + "\"," +
+                 "\"E13\",\"" + e22_[2][0] + dd + "\",\"E23\",\"" + e22_[2][1] + dd + "\",\"E33\",\"" + e22_[2][2] + dd + "\"",
                  // Case 3: Apply e33 strain tensor (matching ref.java line 465)
-                 "\"E11\",\"" + e33_[0][0] + dd + "\",\"E21\",\"" + e33_[0][1] + dd + "\",\"E31\",\"" + e33_[0][2] + dd + "\",\"E12\",\"" + e33_[1][0] + dd + "\",\"E22\",\"" + e33_[1][1] + dd + "\",\"E32\",\"" + e33_[1][2] + dd + "\",\"E13\",\"" + e33_[2][0] + dd + "\",\"E23\",\"" + e33_[2][1] + dd + "\",\"E33\",\"" + e33_[2][2] + dd + "\"",
+                 "\"E11\",\"" + e33_[0][0] + dd + "\",\"E21\",\"" + e33_[0][1] + dd + "\",\"E31\",\"" + e33_[0][2] + dd + "\"," +
+                 "\"E12\",\"" + e33_[1][0] + dd + "\",\"E22\",\"" + e33_[1][1] + dd + "\",\"E32\",\"" + e33_[1][2] + dd + "\"," +
+                 "\"E13\",\"" + e33_[2][0] + dd + "\",\"E23\",\"" + e33_[2][1] + dd + "\",\"E33\",\"" + e33_[2][2] + dd + "\"",
                  // Case 4: Apply e23 strain tensor (matching ref.java line 466)
-                 "\"E11\",\"" + e23_[0][0] + dd + "\",\"E21\",\"" + e23_[0][1] + dd + "\",\"E31\",\"" + e23_[0][2] + dd + "\",\"E12\",\"" + e23_[1][0] + dd + "\",\"E22\",\"" + e23_[1][1] + dd + "\",\"E32\",\"" + e23_[1][2] + dd + "\",\"E13\",\"" + e23_[2][0] + dd + "\",\"E23\",\"" + e23_[2][1] + dd + "\",\"E33\",\"" + e23_[2][2] + dd + "\"",
+                 "\"E11\",\"" + e23_[0][0] + dd + "\",\"E21\",\"" + e23_[0][1] + dd + "\",\"E31\",\"" + e23_[0][2] + dd + "\"," +
+                 "\"E12\",\"" + e23_[1][0] + dd + "\",\"E22\",\"" + e23_[1][1] + dd + "\",\"E32\",\"" + e23_[1][2] + dd + "\"," +
+                 "\"E13\",\"" + e23_[2][0] + dd + "\",\"E23\",\"" + e23_[2][1] + dd + "\",\"E33\",\"" + e23_[2][2] + dd + "\"",
                  // Case 5: Apply e31 strain tensor (matching ref.java line 467)
-                 "\"E11\",\"" + e31_[0][0] + dd + "\",\"E21\",\"" + e31_[0][1] + dd + "\",\"E31\",\"" + e31_[0][2] + dd + "\",\"E12\",\"" + e31_[1][0] + dd + "\",\"E22\",\"" + e31_[1][1] + dd + "\",\"E32\",\"" + e31_[1][2] + dd + "\",\"E13\",\"" + e31_[2][0] + dd + "\",\"E23\",\"" + e31_[2][1] + dd + "\",\"E33\",\"" + e31_[2][2] + dd + "\"",
+                 "\"E11\",\"" + e31_[0][0] + dd + "\",\"E21\",\"" + e31_[0][1] + dd + "\",\"E31\",\"" + e31_[0][2] + dd + "\"," +
+                 "\"E12\",\"" + e31_[1][0] + dd + "\",\"E22\",\"" + e31_[1][1] + dd + "\",\"E32\",\"" + e31_[1][2] + dd + "\"," +
+                 "\"E13\",\"" + e31_[2][0] + dd + "\",\"E23\",\"" + e31_[2][1] + dd + "\",\"E33\",\"" + e31_[2][2] + dd + "\"",
                  // Case 6: Apply e12 strain tensor (matching ref.java line 468)
-                 "\"E11\",\"" + e12_[0][0] + dd + "\",\"E21\",\"" + e12_[0][1] + dd + "\",\"E31\",\"" + e12_[0][2] + dd + "\",\"E12\",\"" + e12_[1][0] + dd + "\",\"E22\",\"" + e12_[1][1] + dd + "\",\"E32\",\"" + e12_[1][2] + dd + "\",\"E13\",\"" + e12_[2][0] + dd + "\",\"E23\",\"" + e12_[2][1] + dd + "\",\"E33\",\"" + e12_[2][2] + dd + "\""
+                 "\"E11\",\"" + e12_[0][0] + dd + "\",\"E21\",\"" + e12_[0][1] + dd + "\",\"E31\",\"" + e12_[0][2] + dd + "\"," +
+                 "\"E12\",\"" + e12_[1][0] + dd + "\",\"E22\",\"" + e12_[1][1] + dd + "\",\"E32\",\"" + e12_[1][2] + dd + "\"," +
+                 "\"E13\",\"" + e12_[2][0] + dd + "\",\"E23\",\"" + e12_[2][1] + dd + "\",\"E33\",\"" + e12_[2][2] + dd + "\""
              });
         model.batch("p1").attach("std1");
 

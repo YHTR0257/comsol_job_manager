@@ -53,7 +53,8 @@ comsolbatch ^
     -inputfile "<< class_name >>.class" ^
     -outputfile "<< class_name >>.mph" ^
     -batchlog "results\simulation.log" ^
-    -batchlogout
+    -batchlogout ^
+    -np << num_cores >>
 
 set EXIT_CODE=%ERRORLEVEL%
 
@@ -78,6 +79,27 @@ if not exist "results\<< output_file >>" (
 )
 
 REM ============================================================
+REM Step 5: Clean up .mph file if save_mph is disabled
+REM ============================================================
+<% if not save_mph %>
+echo.
+echo [%date% %time%] Step 5/5: Cleaning up .mph file...
+REM Delete all .mph files in job directory (COMSOL may add suffixes like _Model)
+for %%f in ("*.mph") do (
+    del "%%f"
+    echo [%date% %time%] Deleted .mph file: %%f
+)
+REM Also check results directory
+if exist "results\*.mph" (
+    for %%f in ("results\*.mph") do (
+        del "%%f"
+        echo [%date% %time%] Deleted .mph file in results: %%f
+    )
+)
+echo [%date% %time%] Cleanup completed
+<% endif %>
+
+REM ============================================================
 REM Summary
 REM ============================================================
 echo.
@@ -89,13 +111,26 @@ echo 2. Class file verification: SUCCESS
 echo 3. Batch execution: SUCCESS
 if exist "results\<< output_file >>" (
     echo 4. Model file verification: SUCCESS
+<% if not save_mph %>
+    echo 5. MPH file cleanup: SKIPPED ^(file still exists^)
+<% endif %>
 ) else (
+<% if save_mph %>
     echo 4. Model file verification: WARNING ^(file not found^)
+<% else %>
+    echo 4. Model file verification: N/A ^(save disabled^)
+    echo 5. MPH file cleanup: SUCCESS
+<% endif %>
 )
 echo ============================================================
 echo Results directory: << job_dir >>\results\
 echo Compilation log: << job_dir >>\results\compile.log
 echo Simulation log: << job_dir >>\results\simulation.log
+<% if save_mph %>
+echo Model file: << job_dir >>\results\<< output_file >>
+<% else %>
+echo Model file: NOT SAVED ^(save_mph=false^)
+<% endif %>
 echo ============================================================
 
 exit /b 0
